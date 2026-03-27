@@ -32,7 +32,7 @@ jobs:
           key: ${{ matrix.os }}-openusd-v25.11
 
       - name: Build GDExtension
-        working-directory: AetherraFlux/godot
+        working-directory: .
         run: |
           scons target=template_debug
           scons target=template_release
