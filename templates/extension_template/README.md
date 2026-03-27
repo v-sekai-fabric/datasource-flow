@@ -67,5 +67,5 @@ If your converted prim needs a custom Godot node class:
 
 1. Create a class inheriting from a Godot node type (e.g., `Node3D`, `Camera3D`)
 2. Also inherit from `IUsdNode3D` for USD metadata integration
-3. Use the `IUSDNODE_IMPLEMENT_GETTER_SETTER` and `IUSDNODE_IMPLEMENT_BINDINGS` macros
+3. Use the `IUSDNODE()` and `IUSDNODE_IMPLEMENT_BINDINGS` macros
 4. Register with `GDREGISTER_CLASS()` in your `initialize_*_module()` function

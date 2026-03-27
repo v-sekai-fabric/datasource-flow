@@ -2,11 +2,6 @@
 
 using namespace godot;
 
-UsdSkeletonNode3D::~UsdSkeletonNode3D()
-{
-    if (animation_.is_valid()) animation_.unref();
-}
-
 void UsdSkeletonNode3D::_ready()
 {
     Skeleton3D::_ready();

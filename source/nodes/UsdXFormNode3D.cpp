@@ -2,12 +2,6 @@
 
 using namespace godot;
 
-UsdXformNode3D::~UsdXformNode3D()
-{
-    if (animation_.is_valid())
-        animation_.unref();
-}
-
 void UsdXformNode3D::_bind_methods()
 {
     // bind methods from the inherited interface here

@@ -2,11 +2,6 @@
 
 using namespace godot;
 
-UsdMeshInstanceNode3D::~UsdMeshInstanceNode3D()
-{
-    if (animation_.is_valid()) animation_.unref();
-}
-
 void UsdMeshInstanceNode3D::_ready()
 {
     MeshInstance3D::_ready();

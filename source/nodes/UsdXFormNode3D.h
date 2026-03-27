@@ -10,12 +10,9 @@
 class UsdXformNode3D : public godot::Node3D, public IUsdNode3D
 {
     GDCLASS(UsdXformNode3D, Node3D)
-    IUSDNODE_IMPLEMENT_GETTER_SETTER
+    IUSDNODE(UsdXformNode3D)
     
 public:
-    UsdXformNode3D() = default;
-    ~UsdXformNode3D() override;
-
     /**
      * Set the animation data to this node
      * @param animation The animation data

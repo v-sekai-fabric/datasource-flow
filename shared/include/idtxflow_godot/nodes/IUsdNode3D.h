@@ -1,6 +1,7 @@
 #pragma once
 
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/core/print_string.hpp>
 
 #include <idtxflow_godot/idtxflow_godot_api.h>
@@ -18,6 +19,24 @@ class IDTXFLOW_GODOT_API IUsdNode3D
 public:
     IUsdNode3D() = default;
     virtual ~IUsdNode3D();
+
+    /**
+     * Always use this over `dynamic_cast<IUsdNode3D*>`!
+     * 
+     * Due to cross DLL/DYLIB boundry issues with dynamic_cast<>, we will store a safe uint64 pointer as
+     * meta data to this node during construction - see `IUSDNODE` macro. This static method allows to
+     * safely receive the properly typed node pointer accross DLL/DYLIB boundries in case node are instantiated
+     * within extensions to this plugin.
+     * @param node 
+     * @return 
+     */
+    static IUsdNode3D* from_node(godot::Node* node)
+    {
+        if (!node || !node->has_meta("__iusdnode3d_ptr")) return nullptr;
+        return reinterpret_cast<IUsdNode3D*>(
+            static_cast<uintptr_t>(static_cast<uint64_t>(node->get_meta("__iusdnode3d_ptr")))
+        );
+    }
     
     /**
      * Store the StageNode3D reference that "owns" this node that has been converted from an UsdPrim
@@ -146,6 +165,15 @@ protected:
     // list of variant sets and their actual selected variant
     godot::Dictionary variant_sets_variant_;
 };
+
+#define IUSDNODE(m_class) /*** Define this class as an IUSDNode3D class ****/ \
+public: \
+    m_class() { \
+        set_meta("__iusdnode3d_ptr", \
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(static_cast<IUsdNode3D*>(this)))); \
+    }\
+    ~m_class() override = default; \
+    IUSDNODE_IMPLEMENT_GETTER_SETTER \
 
 #define IUSDNODE_IMPLEMENT_GETTER_SETTER /*** Implement "redirect" to IUsdNode3D setter/getter to be used in Binding *****/ \
 public:\

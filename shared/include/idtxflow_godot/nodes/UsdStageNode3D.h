@@ -29,12 +29,9 @@
 class UsdStageNode3D : public godot::Node3D, public IUsdNode3D
 {
     GDCLASS(UsdStageNode3D, Node3D)
-    IUSDNODE_IMPLEMENT_GETTER_SETTER
+    IUSDNODE(UsdStageNode3D)
     
 public:
-    UsdStageNode3D() = default;
-    ~UsdStageNode3D() override = default;
-    
     /*********************** Godot Lifecycle Methods **********************************/
     void _enter_tree() override;
     void _ready() override;

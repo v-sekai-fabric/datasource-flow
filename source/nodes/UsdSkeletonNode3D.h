@@ -10,12 +10,9 @@
 class UsdSkeletonNode3D : public godot::Skeleton3D, public IUsdNode3D
 {
     GDCLASS(UsdSkeletonNode3D, Skeleton3D)
-    IUSDNODE_IMPLEMENT_GETTER_SETTER
+    IUSDNODE(UsdSkeletonNode3D)
     
 public:
-    UsdSkeletonNode3D() = default;
-    ~UsdSkeletonNode3D() override;
-
     /********************* Godot Lifecycle hooks *****************/
     void _ready() override;
     void _process(double delta) override;

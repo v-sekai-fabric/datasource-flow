@@ -12,12 +12,9 @@
 class UsdMeshInstanceNode3D : public godot::MeshInstance3D, public IUsdNode3D
 {
     GDCLASS(UsdMeshInstanceNode3D, MeshInstance3D)
-    IUSDNODE_IMPLEMENT_GETTER_SETTER
+    IUSDNODE(UsdMeshInstanceNode3D)
     
 public:
-    UsdMeshInstanceNode3D() = default;
-    ~UsdMeshInstanceNode3D() override;
-
     /******************* Godot lifecycle hooks ***************************/
     void _ready() override;
     void _process(double delta) override;

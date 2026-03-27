@@ -137,7 +137,7 @@ updated converted entity that has been adjusted by the built-in implementation.
 Mixin class that provides common USD metadata (prim path, prim type, variant sets) to any Godot node. Extension authors whose converters create custom node types should:
 
 1. Inherit from the appropriate Godot node class **and** from `IUsdNode3D`
-2. Use the `IUSDNODE_IMPLEMENT_GETTER_SETTER` macro in the class body
+2. Use the `IUSDNODE()` macro in the class body of the header file
 3. Use the `IUSDNODE_IMPLEMENT_BINDINGS(ClassName)` macro in `_bind_methods()`
 
 ### 6. `IDTXFLOW_GODOT_API` — The Export Macro

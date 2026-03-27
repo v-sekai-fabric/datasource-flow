@@ -581,7 +581,7 @@ namespace converter
         converted_prim->set_meta("USD_NODE", true);
         
         // store data in the shared IUsdNode3D class
-        IUsdNode3D* usd_node = dynamic_cast<IUsdNode3D*>(converted_prim);
+        IUsdNode3D* usd_node = IUsdNode3D::from_node(converted_prim);
         // it is an implementation error if the node we convert into does not implement IUsdNode3D
         assert(usd_node != nullptr);
         usd_node->set_prim_name(usd_prim.GetName().GetText());
