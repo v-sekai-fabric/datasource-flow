@@ -1,0 +1,47 @@
+name: GDExtension Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/gdextension-build.yaml
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release Tag
+        id: tag
+        run: |
+          VERSION=$(grep '^version=' addon/IDTXFlow/plugin.cfg | sed 's/version="//' | sed 's/"//')
+          TAG="v${VERSION}"
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag $TAG
+          git push origin $TAG
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Release ${{ steps.tag.outputs.release_tag }}
+          files: |
+            artifacts/**/gdextension-*.zip
+            artifacts/**/idtxflow-sdk-*.zip

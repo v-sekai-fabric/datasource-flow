@@ -1,0 +1,15 @@
+[configuration]
+entry_symbol = "my_extension_library_init"
+compatibility_minimum = "4.5"
+
+[dependencies]
+; IDTXFlow must be loaded before this extension.
+; The key is the path to IDTXFlow's DLL; the value is empty (no re-export).
+windows.x86_64 = { "res://addons/IDTXFlow/bin/windows/libidtxflow.windows.template_debug.x86_64.dll": "" }
+linux.x86_64 = { "res://addons/IDTXFlow/bin/linux/libidtxflow.linux.template_debug.x86_64.so": "" }
+macos.arm64 = { "res://addons/IDTXFlow/bin/macos/libidtxflow.macos.template_debug.arm64.dylib": "" }
+
+[libraries]
+windows.x86_64 = "res://addons/MyIdtxflowExtension/bin/windows/libmy_idtxflow_extension.windows.template_debug.x86_64.dll"
+linux.x86_64 = "res://addons/MyIdtxflowExtension/bin/linux/libmy_idtxflow_extension.linux.template_debug.x86_64.so"
+macos.arm64 = "res://addons/MyIdtxflowExtension/bin/macos/libmy_idtxflow_extension.macos.template_debug.arm64.dylib"

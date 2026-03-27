@@ -1,0 +1,13 @@
+name: GDExtension PR
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/gdextension-build.yaml

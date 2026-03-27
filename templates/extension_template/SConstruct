@@ -1,0 +1,68 @@
+"""
+SConstruct for an IDTXFlow Extension Plugin
+============================================
+This is a template build script for a GDExtension that extends IDTXFlow
+with custom USD prim converters, custom Godot nodes, or editor UI.
+
+Prerequisites:
+  - copy the ``idtxflow-sdk`` folder into the ``thirdparty`` subfolder to this project.
+  
+Usage:
+  scons target=template_debug
+"""
+
+import os
+import platform
+
+from SCons.Environment import Environment
+from SCons.Script import ARGUMENTS, Exit
+
+# --------------------------------------------------------------------------- #
+# Configuration                                                                #
+# --------------------------------------------------------------------------- #
+
+# Path to the built IDTXFlowGodot repository
+idtxflow_sdk = "thirdparty/idtxflow-sdk"
+
+# --------------------------------------------------------------------------- #
+# Environment setup                                                            #
+# --------------------------------------------------------------------------- #
+
+env = Environment(
+    ENV=os.environ.copy(),    
+    tools=["default", "godotcpp", "gdextension"],
+    toolpath=["scons"],
+    IDTXFLOW_SDK=idtxflow_sdk,
+    MSVC_VERSION="14.3",
+    PATH=os.environ.get("PATH", ""),
+)
+
+# Platform detection
+if platform.system() == "Windows":
+    env["PLATFORM"] = "windows"
+elif platform.system() == "Darwin":
+    env["PLATFORM"] = "macos"
+else:
+    env["PLATFORM"] = "linux"
+
+env["platform_name"] = env["PLATFORM"]
+
+arch = platform.machine().lower()
+if arch in ("aarch64", "arm64"):
+    arch = "arm64"
+env["arch"] = ARGUMENTS.get("arch", arch)
+env["target"] = ARGUMENTS.get("target", "template_debug")
+
+if platform.system() == "Windows" and (env["CXX"] == "cl" or env["CC"] == "cl"):
+    # MSVC: Enable C++20
+    env.Append(CXXFLAGS=['/std:c++20'])
+else:
+    # GCC/Clang: Enable C++20
+    env.Append(CXXFLAGS=['-std=c++20'])
+
+# download and build the Godot C++ bindings
+env = env.BuildGodotCPP()
+
+# build the GDExtension itself, which will link against the previously built Godot C++ bindings
+# and the IDTXFlow Godot Bootstrap library
+env.BuildGdExtension()

@@ -8,14 +8,153 @@ Immersive Digital Twin Experience Flow plugin for Godot. The plugin enables the 
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+The IDTX Flow plugin for Godot uses `scons` (a python build tool) to download and install all required dependencies to run the build that creates the binaries.
+However, some tools and software are still required to be installed upfront.
+
+The following software and components are required to be installed first. Usually prior or directly after cloning the repository.
+
+- **Python3**, once installed use `pip` to install `scons`, `jinja2` and `pyside6`
+- **CMake** is required to build some of the dependencies
+- **C++ Buildtools**, either XCode on MacOs or MS Visual Studio Buildtools on Windows
+- **Godot4.5**, to be able to test the plugin within a Godot project. The Godot version need to match the version of the [C++ bindings](https://github.com/godotengine/godot-cpp) used as a dependency.
+
+Once all required software and tools are installed and configured the plugin can be build with the following command, executed at the root folder of this repository.
+
+```bash
+checked_out_repo_dir $>scons
+```
+
+> Please ba patient, as the first initial build will download and compile openUSD from source. Depending on the used hardware this may take up to 40 minutes or more.
+
+The binary artifacts and all additional required files for the plugin can be found in the folder `addon/IDTXFlow`. Just copy this folder into the `addons` folder of the Godot project, this plugin shall be available at.
+
+## Features of the plugin
+
+### Godot Nodes
+
+The plugin provides several custom 3d nodes that are used within the scene tree to represent the converted contents of a usd stage.
+
+|  Custom Node Type | Inherits from | Purpose / Description |
+|----|---|----|
+| UsdStageNode3D | Node3D | This is the node that should be added manually to the scene tree, if the contents of an usd stage shall be converted into it. Once, the uri to an usd file (*.usd, *.usda, *.usdc or *.usdz) is provided, the conversion happens. The conversion is executed within the editor as well as during runtime. The uri can locate files at `res://`, `user://`, `http://` or `https://` locations. However, there is no athentication supported for remote locations. Remote usd files will be downloaded into a subfolder of `user://usd_cache/` and opened from this location. Opening a usd file will run full composition. However, payload rferences will not be immediately loaded. If a composed stage contains a payload, a UsdStageNode3D will be created as child to this one with the payload uri configured to initiate the conversion of the referenced usd file. if the "outer" stage has been loaded from a remote location, this remote location would be the resource anchor of the payload, thus relative paths will lead to a remote location as well. |
+| UsdXFormNode3D | Node3D | This corresponds to the `Xform` prim type of the usd stage. It only provides a transform without any visualization. The node may contain animation data that drives the transform over time. |
+| UsdMeshInstanceNode3D | MeshInstanceNode3D | This corresponds to all `Geom` prim types that contain visual geomitry including the primitives like Cube, Sphere, Cone, Cylinder. |
+| UsdMultiMeshInstanceNode3D | MultiMeshInstanceNode3D | This corresponds to instanced `Geom` prim types. However, the conversion does not support real instancing of prims within an usd stage, yet. This node is used, when *pseudo-instancing* appears within the usd stage as an optimization step modeling tools use during export into the [openUSD](https://openusd.org/release/index.html) format. This means, that the stage contains mesh definitions as `over` (without another spec and thus being invisible), that are referenced by *"Instances"* within the same stage. This pattern is used, when the complexity of full istancing should be omitted, but copying the same prim (mesh) mutliple times within the same stage should be avoided to reduce file size and memory footprint, when loading a stage.  |
+| UsdSkeletonNode3D | Skeleton3D | This corresponds to a `Skeleton` prim, defining the bones and other attributes. Usually, this node will contain the meshes used for skinning this skeleton as UsdMeshInstanceNode3D children. Animation data, if any is authored for the bones, is stored within this node. |
+
+### Converted openUSD Prim Types
+
+The following list provides a complete overview of the actual prim types that will be converted into Godot entities. It may repeat some of the nodes mentioned above.
+
+| USD Prim Type | Godot Entity | Remarks |
+|---|---|---|
+| Xform | UsdXFormNode3D |  |
+| Cube | UsdMeshInstanceNode3D | Uses a `BoxMesh` |
+| Cylinder | UsdMeshInstanceNode3D | Uses a `CylinderMesh`. The Prim's Axis attribute is used to rotate the cylinder in Godot to match the expected orientation defined by the axis attribute value. |
+| Cone | UsdMeshInstanceNode3D | Uses a `CylinderMesh` with top radius set to 0.0. The Prim's Axis attribute is used to rotate the cylinder in Godot to match the expected orientation defined by the axis attribute value. |
+| Sphere | UsdMeshInstanceNode3D | Uses a `SphereMesh`. |
+| Mesh | UsdMeshInstanceNode3D | Uses an `ArrayMesh`. If the prim contains `GeomSubset`'s they will be converted into surfaces added to the ArrayMesh. |
+| SkelRoot | - | This is the openUSD anchor Prim for any skeleton contained within. It would be an error if a Skeleton Prim exists without this one as parent. However, it will not convert into a Godot entity as such. |
+| Skeleton | UsdSkeletonNode3D | The Godot skeleton will maintain the same bone hierarchy as provided by openUSD. However, there might be no limitations on how many skinning weights can be assigned to a single bone in usd. As Godot only supports up to 4 bone weights, only the first 4 values will be taken from usd. This might lead to artifacts in bone skinning as the sum of all weights will not add up to 1.0. |
+| Material | StandardMaterial3D | Creating a Godot StandardMaterial3D from the usd Prim type Material might require to follow references to Shader Prim types in the usd files as those shader might define varying values for specific material values like albedo color, normals, roughness or the like. Those sources can be references to texture images, that will create `Image` and `Texture2D` entities. |
+| Shader | - | The shader nodes will be used to extract the required information to create a `StandardMaterial3D`, but will convert into different Godot entity types, based on their usage. |
+
+
+### Pseudo Instancing Example
+
+The following example demostrates the pseudo-instancing.
+```usda
+#usda 1.0
+(
+    defaultPrim = "Bolts"
+)
+
+#########################################
+# 1. Prototype definition (over)
+#########################################
+
+over "BoltPrototype"
+{
+    def Mesh "Body"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0,0,0), (1,0,0), (0,1,0)]
+    }
+}
+
+#########################################
+# 2. “Instances” created via references
+#########################################
+
+def Xform "Bolts"
+{
+    def Xform "Bolt1" (
+        prepend references = </BoltPrototype>
+    )
+    {
+        
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        # optional: override the prototype's child prim
+        over "Body" { }
+    }
+
+    def Xform "Bolt2" (
+        prepend references = </BoltPrototype>
+    )
+    {
+        double3 xformOp:translate = (2, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "Bolt3" (
+        prepend references = </BoltPrototype>
+    )
+    {        
+        double3 xformOp:translate = (4, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+```
+
+### Handling of Payloads
+
+If a prim in a composed stage contains an authored payload like the following, this prim is not immediately loaded during stage composition. Instead the conversation logic will create a UsdStageNode3D entity passing the uri of the payload to trigger loading and converting the referenced stage.
+
+```usda
+def "PayloadPrim" (
+  prepend payload = @./external.usd@
+)
+{
+}
+```
+
+The challenge in this setup is, that the actual stage, that authored the payload, may also author its own opinion on properties or contained prims of the referenced layer.
+
+```usda
+def "PayloadPrim" (
+  prepend payload = @./external.usd@
+)
+{
+  double3 xformOp:translate = (100.0, 0.0, 0.0)
+  uniform token[] xformOpOrder = ["xformOp:translate"]
+
+  over "ChildPrim" {
+    color3f[] primvars:displayColor = [(1, 0, 0)]
+  }
+}
+```
+
+To ensure, that, those opinions will not get lost, they will be transferred into a `SessionLayer` that is used when composing the stage of the referenced usd file. This session layer is anchored at the same "location" as the stage the reference was authored in. This ensures, that relative paths can be successfully resolved as expected. This means, the UsdStageNode3D will be created as child node containing the uri to the usd file and the session layer contents.
 
 ## Support, Feedback, Contributing
 
-This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/Immersive-Data-Center-Management/<your-project>/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
+This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/Immersive-Data-Center-Management/idtx-flow/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
 
 ## Security / Disclosure
-If you find any bug that may be a security problem, please follow our instructions at [in our security policy](https://github.com/Immersive-Data-Center-Management/<your-project>/security/policy) on how to report it. Please do not create GitHub issues for security-related doubts or problems.
+If you find any bug that may be a security problem, please follow our instructions at [in our security policy](https://github.com/Immersive-Data-Center-Management/idtx-flow/security/policy) on how to report it. Please do not create GitHub issues for security-related doubts or problems.
 
 ## Code of Conduct
 
@@ -23,4 +162,4 @@ We as members, contributors, and leaders pledge to make participation in our com
 
 ## Licensing
 
-Copyright 2026 SAP SE or an SAP affiliate company and idtx-flow contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/Immersive-Data-Center-Management/<your-project>).
+Copyright 2026 SAP SE or an SAP affiliate company and idtx-flow contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/Immersive-Data-Center-Management/idtx-flow).

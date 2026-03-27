@@ -1,0 +1,79 @@
+name: GDExtension Build
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: ["macos-latest", "windows-latest"]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install SCons
+        run: pip install scons jinja2 pyside6
+
+      - name: Restore openUSD cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            thirdparty/openusd-25.11*
+          key: ${{ matrix.os }}-openusd-v25.11
+
+      - name: Build GDExtension
+        working-directory: AetherraFlux/godot
+        run: |
+          scons target=template_debug
+          scons target=template_release
+        shell: bash
+
+      - name: Save openUSD to cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            thirdparty/openusd-25.11*
+          key: ${{ matrix.os }}-openusd-v25.11
+
+      - name: Prepare artifacts
+        working-directory: .
+        run: |
+          mkdir -p artifacts/gdextension
+          mkdir -p artifacts/sdk
+          cp -r addon/IDTXFlow artifacts/gdextension/
+          cp -r build/idtxflow-sdk artifacts/sdk/
+        shell: bash
+
+      - name: Zip binaries and SDK (macOS)
+        if: runner.os == 'macOS'
+        working-directory: .
+        shell: bash
+        run: |
+          zip -r gdextension-${{ runner.os }}.zip artifacts/gdextension
+          zip -r idtxflow-sdk-${{ runner.os }}.zip artifacts/sdk
+
+      - name: Zip binaries and SDK (Windows)
+        if: runner.os == 'Windows'
+        working-directory: .
+        shell: pwsh
+        run: |
+          Compress-Archive -Path artifacts\gdextension\* -DestinationPath gdextension-${{ runner.os }}.zip
+          Compress-Archive -Path artifacts\sdk\* -DestinationPath idtxflow-sdk-${{ runner.os }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdextension-${{ runner.os }}
+          path: |
+            ./gdextension-${{ runner.os }}.zip
+            ./idtxflow-sdk-${{ runner.os }}.zip
