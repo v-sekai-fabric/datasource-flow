@@ -31,7 +31,7 @@ def _download_file(url, dest):
     urllib.request.urlretrieve(url, dest)
 
 def _extract_archive(archive_path, extract_to):
-    print(f"Extracting {archive_path} → {extract_to}")
+    print(f"Extracting {archive_path} --> {extract_to}")
 
     if archive_path.endswith(".zip"):
         with zipfile.ZipFile(archive_path, "r") as zip_ref:
@@ -81,7 +81,7 @@ def _downloadMdlSdk(env):
 
     _extract_archive(archive_path, "./thirdparty")
 
-    # The archive contains mdl-sdk-${VERSION}/... → rename to mdl_sdk
+    # The archive contains mdl-sdk-${VERSION}/... -> rename to mdl_sdk
     extracted_dir = os.path.join(
         "./thirdparty", filename.rsplit('.', 1)[0]  # Remove .zip or .tgz
     )
