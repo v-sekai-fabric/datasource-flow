@@ -1,13 +1,36 @@
 name: GDExtension Release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    if: github.ref == 'refs/heads/main'
 
 permissions:
   contents: write
 
 jobs:
+  check-version:
+    name: Check version not yet released
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag does not exist
+        run: |
+          VERSION=$(grep '^version=' addon/IDTXFlow/plugin.cfg | sed 's/version="//' | sed 's/"//')
+          TAG="v${VERSION}"
+          echo "Checking if tag $TAG already exists..."
+          if git tag --list | grep -qx "$TAG"; then
+            echo "::error::Tag $TAG already exists. Please bump the version in addon/IDTXFlow/plugin.cfg before merging."
+            exit 1
+          fi
+          echo "Tag $TAG does not exist yet. Version is valid."
+  
   build:
     name: Build
     uses: ./.github/workflows/gdextension-build.yaml
