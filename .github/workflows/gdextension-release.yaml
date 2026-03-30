@@ -2,11 +2,9 @@ name: GDExtension Release
 
 on:
   workflow_dispatch:
-
-defaults:
-  run:
-    if: github.ref == 'refs/heads/main'
-
+    branches:
+      - main
+      
 permissions:
   contents: write
 
