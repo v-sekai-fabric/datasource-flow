@@ -231,8 +231,9 @@ void UsdStageNode3D::configure_nodes_recursive(godot::Node3D* node, godot::Node*
     if (owner && node != owner) node->set_owner(owner);
 
     // store the owning StageNode3D
-    if (IUsdNode3D* usd_node = dynamic_cast<IUsdNode3D*>(node))
+    if (IUsdNode3D* usd_node = IUsdNode3D::from_node(node))
         usd_node->set_stage_node(this);
+        
     
     // if this is a UsdStageNode3D itself, skip traversing the childs, as this node takes care of it
     // on it's own
@@ -242,7 +243,7 @@ void UsdStageNode3D::configure_nodes_recursive(godot::Node3D* node, godot::Node*
     const std::string& stage_path = stage_->GetRootLayer()->GetRealPath();
     for (int i = 0; i < node->get_child_count(); i++) {
         Node* child = node->get_child(i);
-        IUsdNode3D* usd_node = dynamic_cast<IUsdNode3D*>(child);
+        IUsdNode3D* usd_node = IUsdNode3D::from_node(child);
         // if the child is not a USD node, do nothing
         if (!usd_node) continue;
         

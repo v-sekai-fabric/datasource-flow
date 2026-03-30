@@ -8,12 +8,9 @@
 class UsdMultiMeshInstanceNode3D : public godot::MultiMeshInstance3D, public IUsdNode3D
 {
     GDCLASS(UsdMultiMeshInstanceNode3D, MultiMeshInstance3D)
-    IUSDNODE_IMPLEMENT_GETTER_SETTER
+    IUSDNODE(UsdMultiMeshInstanceNode3D)
 
 public:
-    UsdMultiMeshInstanceNode3D() = default;
-    ~UsdMultiMeshInstanceNode3D() override = default;
-
     /**
      * Add a new mesh instance into the multimesh array. Use this method to keep existing previous
      * instance transforms intact
