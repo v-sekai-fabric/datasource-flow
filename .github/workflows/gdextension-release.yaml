@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   check-version:
+    if: github.ref == 'refs/heads/main'
     name: Check version not yet released
     runs-on: ubuntu-latest
     steps:
@@ -30,10 +31,12 @@ jobs:
           echo "Tag $TAG does not exist yet. Version is valid."
   
   build:
+    if: github.ref == 'refs/heads/main'
     name: Build
     uses: ./.github/workflows/gdextension-build.yaml
 
   release:
+    if: github.ref == 'refs/heads/main'
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
