@@ -14,10 +14,12 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        #v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        #v6.2.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: '3.x'
 
@@ -25,7 +27,8 @@ jobs:
         run: pip install scons jinja2 pyside6
 
       - name: Restore openUSD cache
-        uses: actions/cache/restore@v4
+        #v5.0.4
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
           path: |
             thirdparty/openusd-25.11*
@@ -39,7 +42,8 @@ jobs:
         shell: bash
 
       - name: Save openUSD to cache
-        uses: actions/cache/save@v4
+        #v5.0.4
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
           path: |
             thirdparty/openusd-25.11*
@@ -71,7 +75,8 @@ jobs:
           Compress-Archive -Path artifacts\sdk\* -DestinationPath idtxflow-sdk-${{ runner.os }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        #v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: gdextension-${{ runner.os }}
           path: |
