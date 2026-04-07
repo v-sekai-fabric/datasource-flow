@@ -2,21 +2,18 @@ name: GDExtension Release
 
 on:
   workflow_dispatch:
-
-defaults:
-  run:
-    if: github.ref == 'refs/heads/main'
-
-permissions:
-  contents: write
-
+    branches:
+      - main
+      
 jobs:
   check-version:
+    if: github.ref == 'refs/heads/main'
     name: Check version not yet released
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        #v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
 
@@ -32,20 +29,26 @@ jobs:
           echo "Tag $TAG does not exist yet. Version is valid."
   
   build:
+    if: github.ref == 'refs/heads/main'
     name: Build
     uses: ./.github/workflows/gdextension-build.yaml
 
   release:
+    if: github.ref == 'refs/heads/main'
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        #v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        # v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: artifacts
 
@@ -61,7 +64,8 @@ jobs:
           git push origin $TAG
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        #v2.6.1
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           name: Release ${{ steps.tag.outputs.release_tag }}
