@@ -39,7 +39,7 @@ Once all required software and tools are installed and configured the plugin can
 checked_out_repo_dir $>scons
 ```
 
-> Please ba patient, as the first initial build will download and compile openUSD from source. Depending on the used hardware this may take up to 40 minutes or more.
+> Please be patient, as the first initial build will download and compile openUSD from source. Depending on the used hardware this may take up to 40 minutes or more.
 
 The binary artifacts and all additional required files for the plugin can be found in the folder `addon/IDTXFlow`. Just copy this folder into the `addons` folder of the Godot project, this plugin shall be available at.
 
