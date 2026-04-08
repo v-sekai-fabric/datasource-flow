@@ -51,7 +51,7 @@ The plugin provides several custom 3d nodes that are used within the scene tree 
 
 |  Custom Node Type | Inherits from | Purpose / Description |
 |----|---|----|
-| UsdStageNode3D | Node3D | This is the node that should be added manually to the scene tree, if the contents of an USD stage shall be converted into it. Once, the uri to an USD file (*.usd, *.usda, *.usdc or *.usdz) is provided, the conversion happens. The conversion is executed within the editor as well as during runtime. The uri can locate files at `res://`, `user://`, `http://` or `https://` locations. However, there is no athentication supported for remote locations. Remote USD files will be downloaded into a subfolder of `user://usd_cache/` and opened from this location. Opening a USD file will run full composition. However, payload rferences will not be immediately loaded. If a composed stage contains a payload, a UsdStageNode3D will be created as child to this one with the payload uri configured to initiate the conversion of the referenced USD file. if the "outer" stage has been loaded from a remote location, this remote location would be the resource anchor of the payload, thus relative paths will lead to a remote location as well. |
+| UsdStageNode3D | Node3D | This is the node that should be added manually to the scene tree, if the contents of an USD stage shall be converted into it. Once, the URI to an USD file (*.usd, *.usda, *.usdc or *.usdz) is provided, the conversion happens. The conversion is executed within the editor as well as during runtime. The URI can locate files at `res://`, `user://`, `http://` or `https://` locations. However, there is no athentication supported for remote locations. Remote USD files will be downloaded into a subfolder of `user://usd_cache/` and opened from this location. Opening a USD file will run full composition. However, payload rferences will not be immediately loaded. If a composed stage contains a payload, a UsdStageNode3D will be created as child to this one with the payload URI configured to initiate the conversion of the referenced USD file. if the "outer" stage has been loaded from a remote location, this remote location would be the resource anchor of the payload, thus relative paths will lead to a remote location as well. |
 | UsdXFormNode3D | Node3D | This corresponds to the `Xform` prim type of the USD stage. It only provides a transform without any visualization. The node may contain animation data that drives the transform over time. |
 | UsdMeshInstanceNode3D | MeshInstanceNode3D | This corresponds to all `Geom` prim types that contain visual geomitry including the primitives like Cube, Sphere, Cone, Cylinder. |
 | UsdMultiMeshInstanceNode3D | MultiMeshInstanceNode3D | This corresponds to instanced `Geom` prim types. However, the conversion does not support real instancing of prims within an USD stage, yet. This node is used, when *pseudo-instancing* appears within the USD stage as an optimization step modeling tools use during export into the [openUSD](https://openusd.org/release/index.html) format. This means, that the stage contains mesh definitions as `over` (without another spec and thus being invisible), that are referenced by *"Instances"* within the same stage. This pattern is used, when the complexity of full istancing should be omitted, but copying the same prim (mesh) mutliple times within the same stage should be avoided to reduce file size and memory footprint, when loading a stage.  |
@@ -136,7 +136,7 @@ def Xform "Bolts"
 
 ### Handling of Payloads
 
-If a prim in a composed stage contains an authored payload like the following, this prim is not immediately loaded during stage composition. Instead the conversation logic will create a UsdStageNode3D entity passing the uri of the payload to trigger loading and converting the referenced stage.
+If a prim in a composed stage contains an authored payload like the following, this prim is not immediately loaded during stage composition. Instead the conversation logic will create a UsdStageNode3D entity passing the URI of the payload to trigger loading and converting the referenced stage.
 
 ```usda
 def "PayloadPrim" (
@@ -162,7 +162,7 @@ def "PayloadPrim" (
 }
 ```
 
-To ensure, that, those opinions will not get lost, they will be transferred into a `SessionLayer` that is used when composing the stage of the referenced USD file. This session layer is anchored at the same "location" as the stage the reference was authored in. This ensures, that relative paths can be successfully resolved as expected. This means, the UsdStageNode3D will be created as child node containing the uri to the USD file and the session layer contents.
+To ensure, that, those opinions will not get lost, they will be transferred into a `SessionLayer` that is used when composing the stage of the referenced USD file. This session layer is anchored at the same "location" as the stage the reference was authored in. This ensures, that relative paths can be successfully resolved as expected. This means, the UsdStageNode3D will be created as child node containing the URI to the USD file and the session layer contents.
 
 ### Material Conversion
 
