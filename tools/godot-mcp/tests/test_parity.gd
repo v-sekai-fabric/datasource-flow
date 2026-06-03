@@ -85,6 +85,18 @@ func _run() -> void:
 	_check(cmds.dispatch("get_os_info", {}).has("name"), "get_os_info")
 	_check(cmds.dispatch("get_video_info", {}).has("adapter"), "get_video_info")
 
+	# --- light parity additions ---
+	cmds.dispatch("make_dir", { "path": "user://_mcpd" })
+	cmds.dispatch("write_file", { "path": "user://_mcpd/a.txt", "text": "hi" })
+	_check(not _err(cmds.dispatch("copy_file", { "from": "user://_mcpd/a.txt", "to": "user://_mcpd/b.txt" })), "copy_file")
+	_check(cmds.dispatch("file_exists", { "path": "user://_mcpd/b.txt" }).exists, "copy_file created dest")
+	_check(not _err(cmds.dispatch("move_file", { "from": "user://_mcpd/b.txt", "to": "user://_mcpd/c.txt" })), "move_file")
+	_check(cmds.dispatch("file_exists", { "path": "user://_mcpd/c.txt" }).exists, "move_file dest exists")
+	_check(not _err(cmds.dispatch("create_resource", { "class": "Resource", "path": "user://_r.tres" })), "create_resource")
+	_check(_err(cmds.dispatch("create_resource", { "class": "Node3D", "path": "user://_x.tres" })), "create_resource non-Resource -> error")
+	_check(cmds.dispatch("get_render_info", {}).has("draw_calls"), "get_render_info")
+	cmds.dispatch("delete_file", { "path": "user://_r.tres" })
+
 	root.free()
 
 

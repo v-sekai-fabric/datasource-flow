@@ -127,6 +127,11 @@ func _tool_defs() -> Array:
 		["get_memory_info", "Static memory usage + peak.", {}],
 		["get_os_info", "OS name/model/locale/processor/threads.", {}],
 		["get_video_info", "Video adapter name/vendor/API.", {}],
+		["get_render_info", "RenderingServer frame stats (objects/primitives/draw calls/mem).", {}],
+		["copy_file", "Copy a file.", { "from": "string", "to": "string" }],
+		["move_file", "Move/rename a file.", { "from": "string", "to": "string" }],
+		["make_dir", "Create a directory (recursive).", { "path": "string" }],
+		["create_resource", "Create + save a Resource of a class.", { "class": "string", "path": "string" }],
 		# project / assets
 		["read_file", "Read a text file (res:// or user://).", { "path": "string" }],
 		["write_file", "Write text to a file.", { "path": "string", "text": "string" }],

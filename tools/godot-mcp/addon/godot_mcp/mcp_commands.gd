@@ -59,6 +59,11 @@ func dispatch(cmd: String, a: Dictionary):
 		"get_memory_info": return { "static": OS.get_static_memory_usage(), "static_peak": OS.get_static_memory_peak_usage() }
 		"get_os_info": return { "name": OS.get_name(), "model": OS.get_model_name(), "locale": OS.get_locale(), "processor": OS.get_processor_name(), "threads": OS.get_processor_count() }
 		"get_video_info": return { "adapter": RenderingServer.get_video_adapter_name(), "vendor": RenderingServer.get_video_adapter_vendor(), "api": RenderingServer.get_video_adapter_api_version() }
+		"get_render_info": return _cmd_get_render_info(a)
+		"copy_file": return _cmd_copy_file(a)
+		"move_file": return _cmd_move_file(a)
+		"make_dir": return _cmd_make_dir(a)
+		"create_resource": return _cmd_create_resource(a)
 		# --- project / assets ---
 		"read_file": return _cmd_read_file(a)
 		"write_file": return _cmd_write_file(a)
@@ -372,6 +377,38 @@ func _cmd_save_branch_as_scene(a: Dictionary):
 		return _err("pack failed")
 	var werr := ResourceSaver.save(ps, String(a.get("scene", "")))
 	return { "saved": String(a.get("scene", "")) } if werr == OK else _err("save failed (%d)" % werr)
+
+
+func _cmd_get_render_info(_a: Dictionary):
+	var R := RenderingServer
+	return {
+		"objects": R.get_rendering_info(R.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
+		"primitives": R.get_rendering_info(R.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME),
+		"draw_calls": R.get_rendering_info(R.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+		"texture_mem": R.get_rendering_info(R.RENDERING_INFO_TEXTURE_MEM_USED),
+		"buffer_mem": R.get_rendering_info(R.RENDERING_INFO_BUFFER_MEM_USED),
+		"video_mem": R.get_rendering_info(R.RENDERING_INFO_VIDEO_MEM_USED),
+	}
+
+func _cmd_copy_file(a: Dictionary):
+	var err := DirAccess.copy_absolute(ProjectSettings.globalize_path(String(a.get("from", ""))), ProjectSettings.globalize_path(String(a.get("to", ""))))
+	return { "ok": true } if err == OK else _err("copy failed (%d)" % err)
+
+func _cmd_move_file(a: Dictionary):
+	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(String(a.get("from", ""))), ProjectSettings.globalize_path(String(a.get("to", ""))))
+	return { "ok": true } if err == OK else _err("move failed (%d)" % err)
+
+func _cmd_make_dir(a: Dictionary):
+	var err := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(String(a.get("path", ""))))
+	return { "ok": true } if err == OK else _err("mkdir failed (%d)" % err)
+
+func _cmd_create_resource(a: Dictionary):
+	var cls := String(a.get("class", ""))
+	if not ClassDB.class_exists(cls) or not ClassDB.can_instantiate(cls) or not ClassDB.is_parent_class(cls, "Resource"):
+		return _err("not an instantiable Resource: " + cls)
+	var res = ClassDB.instantiate(cls)
+	var werr := ResourceSaver.save(res, String(a.get("path", "")))
+	return { "created": String(a.get("path", "")) } if werr == OK else _err("save failed (%d)" % werr)
 
 
 # --- scene / hierarchy (more) -----------------------------------------------
