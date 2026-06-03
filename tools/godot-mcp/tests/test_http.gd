@@ -68,4 +68,21 @@ func _run() -> void:
 	_check(sse.code == 200 and sse.ctype == "text/event-stream", "Accept SSE -> event-stream")
 	_check(sse.body.begins_with("event: message\ndata: "), "SSE body framed")
 
+	# --- streamable-HTTP spec compliance ---
+	# Origin validation (DNS-rebinding protection)
+	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 403, "foreign Origin -> 403")
+	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 200, "localhost Origin allowed")
+	_check(h.route("POST", "/mcp", { "origin": "http://127.0.0.1:9999" }, _rpc("ping", {})).code == 200, "127.0.0.1 Origin allowed")
+	# DELETE (no sessions) -> 405
+	_check(h.route("DELETE", "/mcp", {}, "").code == 405, "DELETE -> 405")
+	# MCP-Protocol-Version: unsupported -> 400, supported -> 200, absent -> 200
+	_check(h.route("POST", "/mcp", { "mcp-protocol-version": "1999-01-01" }, _rpc("ping", {})).code == 400, "bad protocol version -> 400")
+	_check(h.route("POST", "/mcp", { "mcp-protocol-version": "2025-06-18" }, _rpc("ping", {})).code == 200, "supported protocol version ok")
+	# Parse error -> JSON-RPC -32700
+	var pe := h.route("POST", "/mcp", {}, "{ this is not json")
+	var pe_obj = JSON.parse_string(pe.body)
+	_check(pe.code == 200 and pe_obj.error.code == -32700, "unparseable body -> -32700")
+	# JSON-RPC response (no "method") -> 202 accepted, no reply
+	_check(h.route("POST", "/mcp", {}, '{"jsonrpc":"2.0","id":9,"result":{}}').code == 202, "response (no method) -> 202")
+
 	root.free()

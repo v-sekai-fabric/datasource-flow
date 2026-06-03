@@ -31,6 +31,11 @@ func _init() -> void:
 func handle_rpc(req) -> Variant:
 	if typeof(req) != TYPE_DICTIONARY:
 		return _error(null, -32600, "invalid request")
+	# A JSON-RPC message with no "method" is a response (to a server->client
+	# request). We issue no server requests, so accept it with no reply (the
+	# transport answers 202). Per spec these need no response.
+	if not req.has("method"):
+		return null
 	var id = req.get("id", null)
 	var method := String(req.get("method", ""))
 	match method:
@@ -59,6 +64,11 @@ func _result(id, value) -> Dictionary:
 
 func _error(id, code: int, msg: String) -> Dictionary:
 	return _rpc.make_response_error(code, msg, id)
+
+## JSON-RPC error with a null id — for transport-level failures (parse error
+## -32700, unsupported protocol version) before/without a request id.
+func parse_error_response(code: int, msg: String) -> Dictionary:
+	return _rpc.make_response_error(code, msg, null)
 
 
 # --- tools/call --------------------------------------------------------------
@@ -155,16 +165,25 @@ func _tool_names() -> PackedStringArray:
 		names.append(t[0])
 	return names
 
+# MCP REQUIRES inputSchema to be a JSON Schema (clients validate tool arguments
+# against it) — JSON-LD is not accepted here, so JSON Schema is the only correct
+# choice for the tool surface. (A JSON-LD @context could annotate the avatar/USD
+# *domain* separately, but not the MCP inputSchema.)
+const _OPTIONAL_PARAMS := ["max_depth", "name", "args", "monitors", "default", "no_inheritance", "lines"]
+const _ALL_OPTIONAL_TOOLS := ["play_scene", "screenshot", "get_performance", "find_nodes", "read_log"]
+
 func _tool_schemas() -> Array:
 	var out := []
 	for t in _tool_defs():
 		var props := {}
+		var required := []
 		for pname in t[2]:
 			var ptype: String = t[2][pname]
 			props[pname] = {} if ptype == "any" else { "type": ptype }
-		out.append({
-			"name": t[0],
-			"description": t[1],
-			"inputSchema": { "type": "object", "properties": props },
-		})
+			if not (t[0] in _ALL_OPTIONAL_TOOLS) and not (pname in _OPTIONAL_PARAMS):
+				required.append(pname)
+		var schema := { "type": "object", "properties": props, "additionalProperties": false }
+		if not required.is_empty():
+			schema["required"] = required
+		out.append({ "name": t[0], "description": t[1], "inputSchema": schema })
 	return out

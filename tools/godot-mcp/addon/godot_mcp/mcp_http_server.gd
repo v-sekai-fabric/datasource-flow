@@ -32,29 +32,55 @@ func stop() -> void:
 
 # --- pure routing (testable) -------------------------------------------------
 
+const SUPPORTED_VERSIONS := ["2025-06-18", "2025-03-26"]
+
 ## Produce { code, ctype, body } for a parsed HTTP request. No sockets.
 func route(method: String, path: String, headers: Dictionary, body: String) -> Dictionary:
+	# SECURITY (MUST): validate Origin to block DNS-rebinding. A request with no
+	# Origin is a non-browser client (e.g. an MCP CLI) and is allowed; a present
+	# Origin must be localhost.
+	var origin := String(headers.get("origin", ""))
+	if origin != "" and not _origin_allowed(origin):
+		return { "code": 403, "ctype": "text/plain", "body": "forbidden origin" }
+
 	if method == "OPTIONS":
 		return { "code": 204, "ctype": "text/plain", "body": "" }          # CORS preflight
 	if not path.begins_with("/mcp"):
 		return { "code": 404, "ctype": "text/plain", "body": "not found" }
 	if method == "DELETE":
-		return { "code": 200, "ctype": "text/plain", "body": "" }          # session end
+		# stateless: we don't manage sessions, so we don't allow termination.
+		return { "code": 405, "ctype": "text/plain", "body": "session termination not supported" }
 	if method == "GET":
-		# server->client stream; we issue no server-initiated messages.
-		return { "code": 405, "ctype": "text/plain", "body": "method not allowed" }
+		return { "code": 405, "ctype": "text/plain", "body": "no server stream" }
 	if method != "POST":
 		return { "code": 405, "ctype": "text/plain", "body": "method not allowed" }
 
+	# Protocol version (MUST 400 on unsupported, when the header is present).
+	var pv := String(headers.get("mcp-protocol-version", ""))
+	if pv != "" and not (pv in SUPPORTED_VERSIONS):
+		return { "code": 400, "ctype": "application/json",
+			"body": JSON.stringify(protocol.parse_error_response(-32600, "unsupported MCP-Protocol-Version: " + pv)) }
+
+	# Parse (MUST -32700 on an unparseable non-empty body).
 	var req = JSON.parse_string(body)
+	if req == null and body.strip_edges() != "":
+		return { "code": 200, "ctype": "application/json",
+			"body": JSON.stringify(protocol.parse_error_response(-32700, "parse error")) }
+
 	var resp = protocol.handle_rpc(req)
 	if resp == null:
-		return { "code": 202, "ctype": "text/plain", "body": "" }          # notification
+		return { "code": 202, "ctype": "text/plain", "body": "" }          # notification/response accepted
 	var text := JSON.stringify(resp)
 	if "text/event-stream" in String(headers.get("accept", "")):
 		return { "code": 200, "ctype": "text/event-stream",
 			"body": "event: message\ndata: " + text + "\n\n" }
 	return { "code": 200, "ctype": "application/json", "body": text }
+
+func _origin_allowed(origin: String) -> bool:
+	var o := origin.to_lower()
+	return o.begins_with("http://localhost") or o.begins_with("https://localhost") \
+		or o.begins_with("http://127.0.0.1") or o.begins_with("https://127.0.0.1") \
+		or o.begins_with("http://[::1]") or o.begins_with("https://[::1]")
 
 
 # --- TCP / HTTP plumbing -----------------------------------------------------
@@ -82,13 +108,12 @@ func poll() -> void:
 			req["peer"] = peer
 			if not _buffer.enqueue(req):
 				# backpressure: answer immediately rather than queueing unboundedly
-				_write(peer, { "code": 503, "ctype": "text/plain", "body": "server busy" },
-					String(req.headers.get("mcp-session-id", "godot-mcp")))
+				_write(peer, { "code": 503, "ctype": "text/plain", "body": "server busy" })
 
 	# --- constant-work drain: execute at most DRAIN_PER_FRAME requests ------
 	for item in _buffer.drain(DRAIN_PER_FRAME):
 		var r := route(item.method, item.path, item.headers, item.body)
-		_write(item.peer, r, String(item.headers.get("mcp-session-id", "godot-mcp")))
+		_write(item.peer, r)
 
 ## Parse one complete HTTP request out of `buf` (mutating it), or null if more
 ## bytes are needed. Returns { method, path, headers, body }.
@@ -117,17 +142,19 @@ func _try_parse(buf: PackedByteArray):
 		"body": body,
 	}
 
-func _write(peer: StreamPeerTCP, r: Dictionary, session: String) -> void:
+func _write(peer: StreamPeerTCP, r: Dictionary) -> void:
 	var code := int(r.code)
 	var status: String = {
-		200: "OK", 202: "Accepted", 204: "No Content",
-		404: "Not Found", 405: "Method Not Allowed", 503: "Service Unavailable",
+		200: "OK", 202: "Accepted", 204: "No Content", 400: "Bad Request",
+		403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed",
+		503: "Service Unavailable",
 	}.get(code, "OK")
 	var body_bytes := String(r.body).to_utf8_buffer()
 	var h := "HTTP/1.1 %d %s\r\n" % [code, status]
 	h += "Content-Type: %s\r\n" % r.ctype
 	h += "Content-Length: %d\r\n" % body_bytes.size()
-	h += "Mcp-Session-Id: %s\r\n" % session
+	# Stateless: no Mcp-Session-Id (we don't manage sessions). CORS for browser
+	# clients; Origin itself is validated in route().
 	h += "Access-Control-Allow-Origin: *\r\n"
 	h += "Access-Control-Allow-Headers: *\r\n"
 	h += "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
