@@ -193,6 +193,35 @@ def _get_vcpkg_triplet(platform_name):
         return "x64-linux"
 
 
+def _vs_cmake_generator():
+    """CMake Visual Studio generator name for the newest installed VS, via
+    vswhere — or None to let CMake auto-detect.
+
+    Hardcoding "Visual Studio 17 2022" breaks the moment a runner image
+    upgrades past it (GitHub windows-latest -> windows-2025/VS2026 in 2026:
+    "could not find any instance of Visual Studio"). Detect instead, and
+    fall back to no explicit -G (CMake picks the latest) for VS versions we
+    don't have a mapping for yet.
+    """
+    vswhere = os.path.join(
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        "Microsoft Visual Studio", "Installer", "vswhere.exe")
+    if not os.path.isfile(vswhere):
+        return None
+    try:
+        version = subprocess.check_output(
+            [vswhere, "-latest", "-property", "installationVersion"],
+            stderr=subprocess.DEVNULL, text=True).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    major = version.split(".")[0] if version else ""
+    return {
+        "16": "Visual Studio 16 2019",
+        "17": "Visual Studio 17 2022",
+        "18": "Visual Studio 18 2026",
+    }.get(major)
+
+
 # Main build entry point
 
 def _build_ixwebsocket(env):
@@ -280,8 +309,12 @@ def _build_ixwebsocket(env):
 
     if platform_name == "windows":
         toolchain_file = os.path.join(vcpkg_root, "scripts", "buildsystems", "vcpkg.cmake")
+        generator = _vs_cmake_generator()
+        if generator:
+            cmake_args.extend(["-G", generator])
+        # else: no -G — CMake auto-detects the latest installed VS. -A x64
+        # still applies to whichever VS generator it chooses.
         cmake_args.extend([
-            "-G", "Visual Studio 17 2022",
             "-A", "x64",
             "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
             "-DCMAKE_C_FLAGS=/MT",
