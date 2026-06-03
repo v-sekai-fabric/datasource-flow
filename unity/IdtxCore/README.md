@@ -10,7 +10,7 @@ package is what to use when you're locked to 2022.3).
 1. Copy `unity/IdtxCore/` from this repo into your Unity project as
    `Packages/com.vsekai.idtxcore/`, or add it via Package Manager's
    "Add package from disk" pointing at the `unity/IdtxCore/package.json`.
-2. Copy `addon/IDTXFlow/bin/windows/libidtx_core.windows.x86_64.dll`
+2. Copy `addons/IDTXFlow/bin/windows/libidtx_core.windows.x86_64.dll`
    (and the USD runtime DLLs it depends on — see below) into
    `Assets/Plugins/x86_64/`.
 3. In Unity's PluginImporter inspector for `libidtx_core...dll`,

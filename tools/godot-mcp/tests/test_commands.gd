@@ -3,7 +3,7 @@ extends SceneTree
 ## Run: godot --headless --path tools/godot-mcp --script res://tests/test_commands.gd
 ## Exit code 0 = all pass, 1 = failure(s).
 
-const Commands = preload("res://addon/godot_mcp/mcp_commands.gd")
+const Commands = preload("res://addons/godot_mcp/mcp_commands.gd")
 
 var _fail := 0
 var _pass := 0

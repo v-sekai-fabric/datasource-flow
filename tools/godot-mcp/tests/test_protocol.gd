@@ -2,7 +2,7 @@ extends SceneTree
 ## Headless tests for MCPProtocol (JSON-RPC / MCP handler).
 ## Run: godot --headless --path tools/godot-mcp --script res://tests/test_protocol.gd
 
-const Protocol = preload("res://addon/godot_mcp/mcp_protocol.gd")
+const Protocol = preload("res://addons/godot_mcp/mcp_protocol.gd")
 
 var _fail := 0
 var _pass := 0

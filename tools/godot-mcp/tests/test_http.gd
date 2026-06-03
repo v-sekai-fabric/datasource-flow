@@ -3,7 +3,7 @@ extends SceneTree
 ## the MCP streamable-HTTP server (no sockets involved).
 ## Run: godot --headless --path tools/godot-mcp --script res://tests/test_http.gd
 
-const Http = preload("res://addon/godot_mcp/mcp_http_server.gd")
+const Http = preload("res://addons/godot_mcp/mcp_http_server.gd")
 
 var _fail := 0
 var _pass := 0

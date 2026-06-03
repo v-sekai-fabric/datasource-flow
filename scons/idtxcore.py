@@ -4,7 +4,7 @@ SCons tool: idtxcore
 Builds libidtx_core in TWO configurations from one source tree:
 
 1. **Shared library** (`libidtx_core.<platform>.<arch>.{dll,so,dylib}`)
-   — consumed by the GDExtension (addon/IDTXFlow/), the standalone CLI
+   — consumed by the GDExtension (addons/IDTXFlow/), the standalone CLI
    (tools/idtxcli/), and any future P/Invoke host. Symbols are
    `__declspec(dllexport)` on Windows, default ELF visibility elsewhere.
 

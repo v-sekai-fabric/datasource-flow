@@ -2,9 +2,9 @@ extends SceneTree
 ## Adversarial / fuzz tests — hostile inputs must not crash the editor and must
 ## fail safe. Run: godot --headless --path tools/godot-mcp --script res://tests/test_adversarial.gd
 
-const Commands = preload("res://addon/godot_mcp/mcp_commands.gd")
-const Protocol = preload("res://addon/godot_mcp/mcp_protocol.gd")
-const Http = preload("res://addon/godot_mcp/mcp_http_server.gd")
+const Commands = preload("res://addons/godot_mcp/mcp_commands.gd")
+const Protocol = preload("res://addons/godot_mcp/mcp_protocol.gd")
+const Http = preload("res://addons/godot_mcp/mcp_http_server.gd")
 
 var _fail := 0
 var _pass := 0
@@ -99,7 +99,7 @@ return d" })
 	_check(not _is_err(c.dispatch("set_property", { "path": "Kid", "property": "nonexistent_prop", "value": 5 })), "set_property unknown prop ok")
 
 	# 13) instance_scene with a non-PackedScene resource must error.
-	_check(_is_err(c.dispatch("instance_scene", { "scene": "res://addon/godot_mcp/mcp_commands.gd", "parent": "." })), "instance_scene non-scene -> error")
+	_check(_is_err(c.dispatch("instance_scene", { "scene": "res://addons/godot_mcp/mcp_commands.gd", "parent": "." })), "instance_scene non-scene -> error")
 
 	# 14) reparent a node under its OWN descendant (would create a cycle) must
 	#     not crash. (A->A/Sub; reparent A under Sub.)
