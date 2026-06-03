@@ -1,0 +1,183 @@
+# libidtx_core C ABI — function declarations consumed by every host that
+# dlopens the core (Godot GDExtension, Unity P/Invoke, Unreal plugin,
+# Blender hook, and the standalone idtxcli). Fed to
+# thirdparty/generate_stubs/generate_stubs.py, which emits a dlsym-backed
+# dispatch table (POSIX stubs) / delay-load .def (Windows) — no
+# -lidtx_core at link time, and therefore no transitive OpenUSD on any
+# host's link line. The host loads libidtx_core.<plat>.<arch>.<ext> at
+# runtime and calls through the generated table.
+#
+# This file is the single source of truth for the exported ABI. It must
+# stay in lockstep with core/include/idtx_core/idtx_core.h — the SCons
+# step diffs the two so a new IDTX_CORE_API export without a matching
+# line here (or vice versa) fails the build.
+#
+# Format: one C-style declaration per line. Comments start with '#'.
+# Opaque handle types, enums, and option structs come from idtx_core.h,
+# included via the generated stubs' compat header.
+
+# --- Library lifecycle -------------------------------------------------
+const char* idtx_core_version(void);
+int32_t idtx_core_init(const char* plugin_dir);
+void idtx_core_set_progress_cb(idtx_progress_fn cb, void* user);
+
+# --- idtx_skeleton -----------------------------------------------------
+idtx_skeleton_t* idtx_skeleton_create(void);
+void idtx_skeleton_destroy(idtx_skeleton_t* skel);
+void idtx_skeleton_set_name(idtx_skeleton_t* skel, const char* name);
+const char* idtx_skeleton_get_name(const idtx_skeleton_t* skel);
+int32_t idtx_skeleton_add_bone(idtx_skeleton_t* skel, const char* name, int32_t parent_index, const float rest_matrix[16], const float bind_matrix[16]);
+int32_t idtx_skeleton_get_bone_count(const idtx_skeleton_t* skel);
+const char* idtx_skeleton_get_bone_name(const idtx_skeleton_t* skel, int32_t index);
+int32_t idtx_skeleton_get_bone_parent(const idtx_skeleton_t* skel, int32_t index);
+void idtx_skeleton_get_bone_rest(const idtx_skeleton_t* skel, int32_t index, float out_matrix[16]);
+void idtx_skeleton_get_bone_bind(const idtx_skeleton_t* skel, int32_t index, float out_matrix[16]);
+void idtx_skeleton_set_bone_rest(idtx_skeleton_t* skel, int32_t index, const float matrix[16]);
+void idtx_skeleton_set_bone_bind(idtx_skeleton_t* skel, int32_t index, const float matrix[16]);
+
+# --- idtx_mesh ---------------------------------------------------------
+idtx_mesh_t* idtx_mesh_create(void);
+void idtx_mesh_destroy(idtx_mesh_t* mesh);
+void idtx_mesh_set_name(idtx_mesh_t* mesh, const char* name);
+const char* idtx_mesh_get_name(const idtx_mesh_t* mesh);
+void idtx_mesh_set_vertices(idtx_mesh_t* mesh, int32_t vertex_count, const float* positions, const float* normals, const float* uvs, const float* colors);
+void idtx_mesh_set_indices(idtx_mesh_t* mesh, int32_t index_count, const int32_t* indices);
+void idtx_mesh_set_skinning(idtx_mesh_t* mesh, int32_t bones_per_vertex, const int32_t* bone_indices, const float* weights);
+void idtx_mesh_set_face_vertex_counts(idtx_mesh_t* mesh, int32_t count, const int32_t* counts);
+int32_t idtx_mesh_get_face_vertex_count_count(const idtx_mesh_t* mesh);
+void idtx_mesh_get_face_vertex_counts(const idtx_mesh_t* mesh, int32_t* out_counts);
+int32_t idtx_mesh_get_vertex_count(const idtx_mesh_t* mesh);
+int32_t idtx_mesh_get_index_count(const idtx_mesh_t* mesh);
+int32_t idtx_mesh_get_bones_per_vertex(const idtx_mesh_t* mesh);
+void idtx_mesh_get_positions(const idtx_mesh_t* mesh, float* out_positions);
+void idtx_mesh_get_normals(const idtx_mesh_t* mesh, float* out_normals);
+void idtx_mesh_get_uvs(const idtx_mesh_t* mesh, float* out_uvs);
+void idtx_mesh_get_colors(const idtx_mesh_t* mesh, float* out_colors);
+void idtx_mesh_get_indices(const idtx_mesh_t* mesh, int32_t* out_indices);
+void idtx_mesh_get_bone_indices(const idtx_mesh_t* mesh, int32_t* out_bone_indices);
+void idtx_mesh_get_weights(const idtx_mesh_t* mesh, float* out_weights);
+int32_t idtx_mesh_has_normals(const idtx_mesh_t* mesh);
+int32_t idtx_mesh_has_uvs(const idtx_mesh_t* mesh);
+int32_t idtx_mesh_has_colors(const idtx_mesh_t* mesh);
+int32_t idtx_mesh_reconstruct_quads(idtx_mesh_t* mesh, float planarity_max_degrees);
+
+# --- idtx_material -----------------------------------------------------
+idtx_material_t* idtx_material_create(void);
+void idtx_material_destroy(idtx_material_t* mat);
+void idtx_material_set_name(idtx_material_t* mat, const char* name);
+const char* idtx_material_get_name(const idtx_material_t* mat);
+void idtx_material_set_base_color(idtx_material_t* mat, float r, float g, float b, float a);
+void idtx_material_get_base_color(const idtx_material_t* mat, float out_rgba[4]);
+void idtx_material_set_metallic(idtx_material_t* mat, float metallic);
+void idtx_material_set_roughness(idtx_material_t* mat, float roughness);
+float idtx_material_get_metallic(const idtx_material_t* mat);
+float idtx_material_get_roughness(const idtx_material_t* mat);
+void idtx_material_set_alpha_mode(idtx_material_t* mat, idtx_alpha_mode_t mode);
+idtx_alpha_mode_t idtx_material_get_alpha_mode(const idtx_material_t* mat);
+void idtx_material_set_alpha_cutoff(idtx_material_t* mat, float cutoff);
+float idtx_material_get_alpha_cutoff(const idtx_material_t* mat);
+void idtx_material_set_base_color_texture(idtx_material_t* mat, const char* path);
+const char* idtx_material_get_base_color_texture(const idtx_material_t* mat);
+void idtx_material_set_normal_texture(idtx_material_t* mat, const char* path);
+const char* idtx_material_get_normal_texture(const idtx_material_t* mat);
+void idtx_material_set_mtoon_shade_color(idtx_material_t* mat, float r, float g, float b);
+void idtx_material_set_mtoon_rim_color(idtx_material_t* mat, float r, float g, float b);
+void idtx_material_set_mtoon_outline_width(idtx_material_t* mat, float width);
+int32_t idtx_material_is_mtoon(const idtx_material_t* mat);
+void idtx_material_get_mtoon_shade_color(const idtx_material_t* mat, float out_rgb[3]);
+void idtx_material_get_mtoon_rim_color(const idtx_material_t* mat, float out_rgb[3]);
+float idtx_material_get_mtoon_outline_width(const idtx_material_t* mat);
+
+# --- idtx_avatar -------------------------------------------------------
+idtx_avatar_t* idtx_avatar_create(void);
+void idtx_avatar_destroy(idtx_avatar_t* avatar);
+void idtx_avatar_set_name(idtx_avatar_t* avatar, const char* name);
+const char* idtx_avatar_get_name(const idtx_avatar_t* avatar);
+void idtx_avatar_set_root_transform(idtx_avatar_t* avatar, const float matrix[16]);
+void idtx_avatar_get_root_transform(const idtx_avatar_t* avatar, float out_matrix[16]);
+void idtx_avatar_set_source_vrm_version(idtx_avatar_t* avatar, const char* version);
+const char* idtx_avatar_get_source_vrm_version(const idtx_avatar_t* avatar);
+void idtx_avatar_set_source_usd_path(idtx_avatar_t* avatar, const char* path);
+const char* idtx_avatar_get_source_usd_path(const idtx_avatar_t* avatar);
+void idtx_avatar_set_skeleton(idtx_avatar_t* avatar, idtx_skeleton_t* skel);
+idtx_skeleton_t* idtx_avatar_get_skeleton(const idtx_avatar_t* avatar);
+int32_t idtx_avatar_add_mesh(idtx_avatar_t* avatar, idtx_mesh_t* mesh, int32_t material_index);
+int32_t idtx_avatar_get_mesh_count(const idtx_avatar_t* avatar);
+idtx_mesh_t* idtx_avatar_get_mesh(const idtx_avatar_t* avatar, int32_t index);
+int32_t idtx_avatar_get_mesh_material(const idtx_avatar_t* avatar, int32_t mesh_index);
+int32_t idtx_avatar_add_material(idtx_avatar_t* avatar, idtx_material_t* mat);
+int32_t idtx_avatar_get_material_count(const idtx_avatar_t* avatar);
+idtx_material_t* idtx_avatar_get_material(const idtx_avatar_t* avatar, int32_t index);
+
+# --- idtx_spring_chain -------------------------------------------------
+idtx_spring_chain_t* idtx_spring_chain_create(void);
+void idtx_spring_chain_destroy(idtx_spring_chain_t* chain);
+void idtx_spring_chain_set_name(idtx_spring_chain_t* chain, const char* name);
+const char* idtx_spring_chain_get_name(const idtx_spring_chain_t* chain);
+void idtx_spring_chain_set_joints(idtx_spring_chain_t* chain, int32_t count, const int32_t* bone_indices);
+void idtx_spring_chain_set_dynamics(idtx_spring_chain_t* chain, float stiffness, float drag, float gravity_power, float hit_radius);
+void idtx_spring_chain_set_gravity_dir(idtx_spring_chain_t* chain, float x, float y, float z);
+void idtx_spring_chain_add_collider(idtx_spring_chain_t* chain, int32_t collider_index);
+int32_t idtx_spring_chain_get_joint_count(const idtx_spring_chain_t* chain);
+int32_t idtx_spring_chain_get_joint(const idtx_spring_chain_t* chain, int32_t index);
+float idtx_spring_chain_get_stiffness(const idtx_spring_chain_t* chain);
+float idtx_spring_chain_get_drag(const idtx_spring_chain_t* chain);
+float idtx_spring_chain_get_gravity_power(const idtx_spring_chain_t* chain);
+float idtx_spring_chain_get_hit_radius(const idtx_spring_chain_t* chain);
+void idtx_spring_chain_get_gravity_dir(const idtx_spring_chain_t* chain, float out_xyz[3]);
+int32_t idtx_spring_chain_get_collider_count(const idtx_spring_chain_t* chain);
+int32_t idtx_spring_chain_get_collider(const idtx_spring_chain_t* chain, int32_t index);
+
+# --- idtx_spring_collider ----------------------------------------------
+idtx_spring_collider_t* idtx_spring_collider_create(void);
+void idtx_spring_collider_destroy(idtx_spring_collider_t* col);
+void idtx_spring_collider_set_name(idtx_spring_collider_t* col, const char* name);
+const char* idtx_spring_collider_get_name(const idtx_spring_collider_t* col);
+void idtx_spring_collider_set_attached_bone(idtx_spring_collider_t* col, int32_t bone_index);
+int32_t idtx_spring_collider_get_attached_bone(const idtx_spring_collider_t* col);
+void idtx_spring_collider_set_shape(idtx_spring_collider_t* col, idtx_collider_shape_t shape);
+idtx_collider_shape_t idtx_spring_collider_get_shape(const idtx_spring_collider_t* col);
+void idtx_spring_collider_set_offset(idtx_spring_collider_t* col, float x, float y, float z);
+void idtx_spring_collider_get_offset(const idtx_spring_collider_t* col, float out_xyz[3]);
+void idtx_spring_collider_set_radius(idtx_spring_collider_t* col, float radius);
+float idtx_spring_collider_get_radius(const idtx_spring_collider_t* col);
+void idtx_spring_collider_set_tail(idtx_spring_collider_t* col, float x, float y, float z);
+void idtx_spring_collider_get_tail(const idtx_spring_collider_t* col, float out_xyz[3]);
+int32_t idtx_avatar_add_spring_chain(idtx_avatar_t* avatar, idtx_spring_chain_t* chain);
+int32_t idtx_avatar_get_spring_chain_count(const idtx_avatar_t* avatar);
+idtx_spring_chain_t* idtx_avatar_get_spring_chain(const idtx_avatar_t* avatar, int32_t index);
+int32_t idtx_avatar_add_spring_collider(idtx_avatar_t* avatar, idtx_spring_collider_t* col);
+int32_t idtx_avatar_get_spring_collider_count(const idtx_avatar_t* avatar);
+idtx_spring_collider_t* idtx_avatar_get_spring_collider(const idtx_avatar_t* avatar, int32_t index);
+
+# --- idtx_physics_collider ---------------------------------------------
+idtx_physics_collider_t* idtx_physics_collider_create(void);
+void idtx_physics_collider_destroy(idtx_physics_collider_t* col);
+void idtx_physics_collider_set_name(idtx_physics_collider_t* col, const char* name);
+const char* idtx_physics_collider_get_name(const idtx_physics_collider_t* col);
+idtx_physics_shape_t idtx_physics_collider_get_shape(const idtx_physics_collider_t* col);
+void idtx_physics_collider_set_transform(idtx_physics_collider_t* col, const float matrix[16]);
+void idtx_physics_collider_get_transform(const idtx_physics_collider_t* col, float out_matrix[16]);
+void idtx_physics_collider_set_attached_bone(idtx_physics_collider_t* col, int32_t bone_index);
+int32_t idtx_physics_collider_get_attached_bone(const idtx_physics_collider_t* col);
+void idtx_physics_collider_set_box(idtx_physics_collider_t* col, float half_extent_x, float half_extent_y, float half_extent_z);
+void idtx_physics_collider_set_sphere(idtx_physics_collider_t* col, float radius);
+void idtx_physics_collider_set_capsule(idtx_physics_collider_t* col, float radius, float height);
+void idtx_physics_collider_set_cylinder(idtx_physics_collider_t* col, float radius, float height);
+void idtx_physics_collider_set_tapered_capsule(idtx_physics_collider_t* col, float top_radius, float bottom_radius, float mid_height);
+void idtx_physics_collider_set_tapered_cylinder(idtx_physics_collider_t* col, float top_radius, float bottom_radius, float height);
+void idtx_physics_collider_get_dimensions(const idtx_physics_collider_t* col, float out_dims[3]);
+int32_t idtx_avatar_add_physics_collider(idtx_avatar_t* avatar, idtx_physics_collider_t* col);
+int32_t idtx_avatar_get_physics_collider_count(const idtx_avatar_t* avatar);
+idtx_physics_collider_t* idtx_avatar_get_physics_collider(const idtx_avatar_t* avatar, int32_t index);
+
+# --- Top-level I/O: USD (flat + layer-aware), VRM, Godot .scn ----------
+int32_t idtx_core_export_avatar_to_usd(const idtx_avatar_t* avatar, const char* path);
+void idtx_usd_export_opts_init(idtx_usd_export_opts_t* opts);
+int32_t idtx_core_export_avatar_to_usd_ex(const idtx_avatar_t* avatar, const char* path, const idtx_usd_export_opts_t* opts);
+idtx_avatar_t* idtx_core_import_avatar_from_usd(const char* path);
+int32_t idtx_core_export_avatar_to_vrm(const idtx_avatar_t* avatar, const char* path);
+idtx_avatar_t* idtx_core_import_avatar_from_vrm(const char* path);
+void idtx_scn_opts_init(idtx_scn_opts_t* opts);
+int32_t idtx_core_export_avatar_to_scn(const idtx_avatar_t* avatar, const char* path, const idtx_scn_opts_t* opts);
+int64_t idtx_core_export_avatar_to_scn_buffer(const idtx_avatar_t* avatar, uint8_t* out_buf, size_t out_cap, const idtx_scn_opts_t* opts);
