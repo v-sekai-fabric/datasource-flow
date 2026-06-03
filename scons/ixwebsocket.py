@@ -150,6 +150,33 @@ def _install_openssl_vcpkg(vcpkg_root, triplet):
     print(f"OpenSSL installed via vcpkg ({triplet})")
 
 
+def _install_zstd_vcpkg(vcpkg_root, triplet):
+    """Install zstd via vcpkg for the given triplet.
+
+    libidtx_core's caibx transport (idtx_chunker.cpp) links zstd. OpenUSD
+    vendors zstd internally but doesn't re-export the C symbols, so we need
+    a standalone zstd.lib. Installed here, next to OpenSSL, so a clean
+    checkout's first build provides it without a manual vcpkg step.
+    """
+    vcpkg_exe = os.path.join(vcpkg_root, "vcpkg.exe" if platform.system() == "Windows" else "vcpkg")
+    installed_dir = os.path.join(vcpkg_root, "installed", triplet, "lib")
+    check_file = os.path.join(installed_dir, "zstd.lib" if platform.system() == "Windows" else "libzstd.a")
+
+    if os.path.exists(check_file):
+        print(f"zstd already installed via vcpkg ({triplet})")
+        return
+
+    print(f"Installing zstd via vcpkg ({triplet})...")
+    result = subprocess.run([
+        vcpkg_exe, "install", f"zstd:{triplet}",
+        "--recurse",
+    ], cwd=vcpkg_root)
+    if result.returncode != 0:
+        Exit(f"vcpkg install zstd failed (exit code: {result.returncode})")
+
+    print(f"zstd installed via vcpkg ({triplet})")
+
+
 def _get_vcpkg_triplet(platform_name):
     """Return the vcpkg triplet for the current platform/architecture."""
     machine = platform.machine().lower()
@@ -216,6 +243,7 @@ def _build_ixwebsocket(env):
         vcpkg_root = _ensure_vcpkg()
         vcpkg_triplet = _get_vcpkg_triplet(platform_name)
         _install_openssl_vcpkg(vcpkg_root, vcpkg_triplet)
+        _install_zstd_vcpkg(vcpkg_root, vcpkg_triplet)
         use_vcpkg_toolchain = True
     else:
         # macOS / Linux: try system OpenSSL first
@@ -230,6 +258,7 @@ def _build_ixwebsocket(env):
             vcpkg_root = _ensure_vcpkg()
             vcpkg_triplet = _get_vcpkg_triplet(platform_name)
             _install_openssl_vcpkg(vcpkg_root, vcpkg_triplet)
+            _install_zstd_vcpkg(vcpkg_root, vcpkg_triplet)
             use_vcpkg_toolchain = True
 
     # CMake configure
