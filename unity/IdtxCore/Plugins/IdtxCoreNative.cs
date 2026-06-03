@@ -23,10 +23,10 @@ namespace IdtxCore.Native
 {
     internal static class Lib
     {
-        // Unity strips the lib- prefix and platform/arch suffix when
-        // loading native plugins — "idtx_core" matches the .dll
-        // basename Unity sees on disk after the PluginImporter's
-        // platform settings strip the prefix.
+        // Logical name only. The shipped file is libidtx_core.<plat>.<arch>.<ext>
+        // (the basename every host dlopens), which does NOT match this name on
+        // disk — IdtxCoreLoader registers a NativeLibrary.SetDllImportResolver
+        // that maps "idtx_core" to the real per-platform file at runtime.
         internal const string DllName = "idtx_core";
     }
 
