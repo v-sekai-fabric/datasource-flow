@@ -121,7 +121,7 @@ func _resolve(path: String) -> Node:
 func _cmd_get_scene_tree(a: Dictionary):
 	if root == null:
 		return _err("no scene root")
-	return _node_tree(root, root, int(a.get("max_depth", 64)))
+	return _node_tree(root, root, clampi(int(a.get("max_depth", 64)), 0, 256))
 
 func _node_tree(n: Node, r: Node, depth: int) -> Dictionary:
 	var d := _node_brief(n)
@@ -158,6 +158,8 @@ func _cmd_create_node(a: Dictionary):
 	var type := String(a.get("type", "Node"))
 	if not ClassDB.class_exists(type) or not ClassDB.can_instantiate(type):
 		return _err("cannot instantiate type: " + type)
+	if not ClassDB.is_parent_class(type, "Node"):
+		return _err("type is not a Node: " + type)
 	var node: Node = ClassDB.instantiate(type)
 	node.name = String(a.get("name", type))
 	parent.add_child(node)
@@ -214,19 +216,22 @@ func _cmd_set_property(a: Dictionary):
 	n.set(prop, _coerce(a.get("value"), typeof(n.get(prop))))
 	return { "value": _to_json(n.get(prop)) }
 
+const _BLOCKED_METHODS := ["free", "queue_free", "set_owner"]
+
 func _cmd_call_method(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
 	if n == null:
 		return _err("node not found")
 	var method := String(a.get("method", ""))
+	if method in _BLOCKED_METHODS:
+		return _err("method '%s' is blocked via call_method (use delete_node)" % method)
 	if not n.has_method(method):
 		return _err("no such method: " + method)
-	var raw: Array = a.get("args", [])
-	if typeof(raw) != TYPE_ARRAY:
-		raw = []
+	var raw = a.get("args", [])
 	var call_args := []
-	for v in raw:
-		call_args.append(_coerce(v, TYPE_NIL))
+	if raw is Array:
+		for v in raw:
+			call_args.append(_coerce(v, TYPE_NIL))
 	return { "value": _to_json(n.callv(method, call_args)) }
 
 func _cmd_list_members(a: Dictionary, methods: bool):
@@ -332,8 +337,8 @@ func _cmd_create_script(a: Dictionary):
 
 func _cmd_create_scene(a: Dictionary):
 	var type := String(a.get("root_type", "Node"))
-	if not ClassDB.can_instantiate(type):
-		return _err("cannot instantiate: " + type)
+	if not ClassDB.can_instantiate(type) or not ClassDB.is_parent_class(type, "Node"):
+		return _err("cannot instantiate as a Node: " + type)
 	var r: Node = ClassDB.instantiate(type)
 	r.name = String(a.get("root_name", type))
 	var ps := PackedScene.new()
@@ -386,7 +391,11 @@ func _cmd_move_child(a: Dictionary):
 	var n := _resolve(String(a.get("path", "")))
 	if n == null:
 		return _err("node not found")
-	n.get_parent().move_child(n, int(a.get("to_index", 0)))
+	var parent := n.get_parent()
+	if parent == null:
+		return _err("node has no parent")
+	var idx := clampi(int(a.get("to_index", 0)), 0, max(0, parent.get_child_count() - 1))
+	parent.move_child(n, idx)
 	return { "index": n.get_index() }
 
 func _cmd_group(a: Dictionary, add: bool):
@@ -559,7 +568,9 @@ func _scan_ext(dir_path: String, ext: String, out: PackedStringArray = PackedStr
 	d.list_dir_end()
 	return out
 
-func _to_json(v):
+func _to_json(v, depth: int = 0):
+	if depth > 32:
+		return "<max-depth>"
 	match typeof(v):
 		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
 			return v
@@ -575,12 +586,12 @@ func _to_json(v):
 		TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY:
 			var arr := []
 			for e in v:
-				arr.append(_to_json(e))
+				arr.append(_to_json(e, depth + 1))
 			return arr
 		TYPE_DICTIONARY:
 			var dd := {}
 			for k in v:
-				dd[String(k)] = _to_json(v[k])
+				dd[String(k)] = _to_json(v[k], depth + 1)
 			return dd
 		TYPE_OBJECT:
 			if v == null:
