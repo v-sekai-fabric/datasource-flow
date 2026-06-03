@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "IDTX Flow (Unreal)",
+	"Description": "Editor plugin that exports Unreal skeletal/static meshes through libidtx_core's layer-aware USD exporter (idtx_core_export_avatar_to_usd_ex). Loads core at runtime via the generated dlopen table (CHI-312); no static link to core or its OpenUSD.",
+	"Category": "Importers",
+	"CreatedBy": "openusd-fabric / V-Sekai contributors",
+	"CreatedByURL": "https://github.com/v-sekai-multiplayer-fabric",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "IdtxFlowUnreal",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
