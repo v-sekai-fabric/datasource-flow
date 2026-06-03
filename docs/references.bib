@@ -1,0 +1,58 @@
+% idtx-flow-v-sekai — external references / prior art cited in code & issues.
+% Keep in sync with the URLs cited in source comments and Linear (CHI-310/311/312).
+
+@misc{openusd,
+  title        = {{OpenUSD}: Universal Scene Description},
+  author       = {{Pixar Animation Studios}},
+  howpublished = {\url{https://github.com/PixarAnimationStudios/OpenUSD}},
+  note         = {v25.11; libidtx\_core statically links it. build\_scripts/build\_usd.py
+                  patched for VS2026 generator support (scons/patches/openusd-vs2026-generator.patch)}
+}
+
+@misc{chromium_generate_stubs,
+  title        = {generate\_stubs.py: dlsym / delay-load stub generator},
+  author       = {{The Chromium Authors}},
+  howpublished = {\url{https://source.chromium.org/chromium/chromium/src/+/main:tools/generate_stubs/}},
+  note         = {Vendored at thirdparty/generate\_stubs; BSD-style license.
+                  Emits the dlopen dispatch table from core/idtx\_core.sigs}
+}
+
+@misc{catania_seamless_animated_skeletons,
+  title        = {SeamlessAnimatedSkeletons: an Unreal Engine 4 plugin that simplifies the use of many skeletons},
+  author       = {Catania, Andrea},
+  organization = {IMVU},
+  howpublished = {\url{https://github.com/AndreaCatania/SeamlessAnimatedSkeletons}},
+  note         = {Reference pattern for the CHI-312 Unreal plugin: UE4 editor module
+                  (UFactory custom asset + FUICommandList/FSlateStyleSet + extensible retarget actions),
+                  Editor+Runtime module split}
+}
+
+@misc{catania_runtime_skeletal_mesh_generator,
+  title        = {RuntimeSkeletalMeshGenerator: load/generate a SkeletalMesh into a SkeletalMeshComponent at runtime},
+  author       = {Catania, Andrea},
+  howpublished = {\url{https://github.com/AndreaCatania/RuntimeSkeletalMeshGenerator}},
+  note         = {Reference for USkeletalMesh render-data construction/extraction
+                  (FSkeletalMeshLODRenderData: positions, normals/UVs, skin weights, bone maps) —
+                  the inverse of the CHI-312 exporter's read path}
+}
+
+@misc{ue_third_party_libraries,
+  title        = {Integrating Third-Party Libraries into Unreal Engine},
+  author       = {{Epic Games}},
+  howpublished = {\url{https://dev.epicgames.com/documentation/en-us/unreal-engine/integrating-third-party-libraries-into-unreal-engine}},
+  note         = {PublicDelayLoadDLLs / RuntimeDependencies / FPlatformProcess::GetDllHandle —
+                  the UE side of the dlopen .sigs table adoption (CHI-312)}
+}
+
+@misc{ue_skeletal_mesh_render_data,
+  title        = {FSkeletalMeshRenderData — Unreal Engine API Reference},
+  author       = {{Epic Games}},
+  howpublished = {\url{https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSkeletalMeshRenderData}}
+}
+
+@misc{ue427_get_ref_skeleton,
+  title        = {{USkeletalMesh::GetRefSkeleton} — Unreal Engine 4.27 API Reference},
+  author       = {{Epic Games}},
+  howpublished = {\url{https://docs.unrealengine.com/4.27/en-US/API/Runtime/Engine/Engine/USkeletalMesh/GetRefSkeleton/2/}},
+  note         = {UE4.27 getter (direct member access deprecated) — the UE4/UE5 accessor shim in CHI-312}
+}

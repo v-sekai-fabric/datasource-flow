@@ -1,0 +1,23 @@
+--- a/build_scripts/build_usd.py	2026-06-03 14:40:08.970182300 -0700
++++ b/build_scripts/build_usd.py	2026-06-03 14:40:24.000000000 -0700
+@@ -161,6 +161,9 @@
+ # Helpers to determine the version of "Visual Studio" (also support the Build Tools) based
+ # on the version of the MSVC compiler.
+ # See MSVC++ versions table on https://en.wikipedia.org/wiki/Microsoft_Visual_C%2B%2B
++def IsVisualStudio2026OrGreater():
++    VISUAL_STUDIO_2026_VERSION = (14, 50)
++    return IsVisualStudioVersionOrGreater(VISUAL_STUDIO_2026_VERSION)
+ def IsVisualStudio2022OrGreater():
+     VISUAL_STUDIO_2022_VERSION = (14, 30)
+     return IsVisualStudioVersionOrGreater(VISUAL_STUDIO_2022_VERSION)
+@@ -401,7 +404,9 @@
+     # building a 64-bit project. (Surely there is a better way to do this?)
+     # TODO: figure out exactly what "vcvarsall.bat x64" sets to force x64
+     if generator is None and Windows():
+-        if IsVisualStudio2022OrGreater():
++        if IsVisualStudio2026OrGreater():
++            generator = "Visual Studio 18 2026"
++        elif IsVisualStudio2022OrGreater():
+             generator = "Visual Studio 17 2022"
+         elif IsVisualStudio2019OrGreater():
+             generator = "Visual Studio 16 2019"

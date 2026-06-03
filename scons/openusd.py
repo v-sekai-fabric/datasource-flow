@@ -21,6 +21,51 @@ def generate(env):
 def exists(env):
     return True
 
+def _patch_openusd_vs2026(open_usd_path):
+    """Add VS2026 generator support to the cloned OpenUSD build_usd.py.
+
+    Idempotent: skips if already patched. Applies the tracked unified diff
+    via `git apply` (the clone is a git repo); falls back to an in-place
+    string edit if `git apply` can't apply it.
+    """
+    build_usd = os.path.join(open_usd_path, "build_scripts", "build_usd.py")
+    if not os.path.isfile(build_usd):
+        return
+    with open(build_usd, encoding="utf-8") as f:
+        src = f.read()
+    if "IsVisualStudio2026OrGreater" in src:
+        return  # already patched
+
+    patch = os.path.abspath(
+        os.path.join("scons", "patches", "openusd-vs2026-generator.patch"))
+    print("Patching OpenUSD build_usd.py for VS2026 generator support...")
+    if os.path.isfile(patch):
+        result = subprocess.run(["git", "apply", "-p1", patch], cwd=open_usd_path)
+        if result.returncode == 0:
+            return
+
+    # Fallback: apply the same two edits directly.
+    patched = src.replace(
+        "def IsVisualStudio2022OrGreater():",
+        "def IsVisualStudio2026OrGreater():\n"
+        "    VISUAL_STUDIO_2026_VERSION = (14, 50)\n"
+        "    return IsVisualStudioVersionOrGreater(VISUAL_STUDIO_2026_VERSION)\n"
+        "def IsVisualStudio2022OrGreater():",
+        1,
+    ).replace(
+        "        if IsVisualStudio2022OrGreater():\n"
+        "            generator = \"Visual Studio 17 2022\"",
+        "        if IsVisualStudio2026OrGreater():\n"
+        "            generator = \"Visual Studio 18 2026\"\n"
+        "        elif IsVisualStudio2022OrGreater():\n"
+        "            generator = \"Visual Studio 17 2022\"",
+        1,
+    )
+    if patched != src:
+        with open(build_usd, "w", encoding="utf-8") as f:
+            f.write(patched)
+
+
 def _build_open_usd(env, with_python_support=False):
     open_usd_version = env.get('openusd_version', '')
     open_usd_path = f"thirdparty/openusd-{open_usd_version}-src"
@@ -36,7 +81,15 @@ def _build_open_usd(env, with_python_support=False):
         ])
         if result.returncode != 0:
             print(f"Failed to clone openUSD repo.")
-            Exit(f"Build aborted due to subprocess failure (exit code: {result.returncode})")              
+            Exit(f"Build aborted due to subprocess failure (exit code: {result.returncode})")
+
+    # OpenUSD's build_usd.py picks its CMake VS generator by version range:
+    # IsVisualStudio2022OrGreater() is true for VS2026 too, so on a VS2026-
+    # only host (e.g. the upgraded GitHub windows runner) it selects the
+    # VS2022 generator and CMake then "could not find any instance of Visual
+    # Studio". Apply the tracked patch that adds a VS2026 branch. The
+    # vendored source is git-ignored, so we re-apply after each clone.
+    _patch_openusd_vs2026(open_usd_path)
 
     platform_name = env["platform_name"]
     build_target = env["target"]
