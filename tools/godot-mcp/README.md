@@ -7,20 +7,22 @@ way as the Unity host for the two-implementation interop check (Linear CHI-312).
 
 ## Architecture
 
-Two parts, mirroring the Unity-MCP (editor plugin + standalone server):
+The Godot editor **is** the MCP server — no external (Python) process required:
 
 ```
-MCP client ──(HTTP streaming / stdio)──▶ server.py ──(TCP, line-JSON)──▶ godot_mcp addon ──▶ Godot editor
-                                          FastMCP                         EditorPlugin
+MCP client ──(streamable-HTTP: POST /mcp)──▶ godot_mcp addon ──▶ Godot editor
+                                              EditorPlugin (GDScript)
 ```
 
-- **`addon/godot_mcp/`** — a Godot 4 `@tool` `EditorPlugin` that opens
-  `127.0.0.1:9510` and dispatches newline-delimited JSON commands against the
-  live `EditorInterface` + edited `SceneTree`.
-- **`server.py`** — a FastMCP server that exposes the tools and forwards each to
-  the addon. **HTTP streaming (`streamable-http`) is the first-class transport**
-  (remote/Docker-friendly, matching the Unity-MCP's streamableHttp mode); stdio
-  is available via `GODOT_MCP_TRANSPORT=stdio`.
+The addon (`addon/godot_mcp/`) serves the MCP **streamable-HTTP** transport
+directly in GDScript over `TCPServer`, on `http://127.0.0.1:8788/mcp`:
+
+- `mcp_http_server.gd` — minimal HTTP/1.1 + streamable-HTTP (POST → JSON-RPC,
+  replying `application/json` or `text/event-stream` per `Accept`).
+- `mcp_protocol.gd` — the MCP / JSON-RPC layer (uses Godot's built-in `JSONRPC`
+  for envelopes): `initialize`, `tools/list`, `tools/call`, `ping`.
+- `mcp_commands.gd` — transport-free command logic (`MCPCommands`) against
+  `EditorInterface` + the edited `SceneTree`. Unit-tested headless.
 
 ### Reflection model
 
@@ -46,36 +48,28 @@ eval) is the escape hatch for multi-step logic, equivalent to Unity execute-C#.
 | `godot_screenshot` | capture screenshot |
 | `godot_ping` | connectivity |
 
-## Setup
+## Setup (no Python)
 
 1. **Enable the addon** in your Godot project:
    - copy `addon/godot_mcp/` → `<project>/addons/godot_mcp/`
    - Project → Project Settings → Plugins → enable **Godot MCP Bridge**
-   - the Output panel prints `bridge listening on 127.0.0.1:9510`.
-2. **Install the server deps:** `pip install "mcp[cli]"`
-3. **Run / register the server** (HTTP streaming on `127.0.0.1:8787` by default):
+   - the Output panel prints `MCP streamable-HTTP on http://127.0.0.1:8788/mcp`.
+2. **Point your MCP client at the addon** — that's it:
    ```jsonc
    // MCP client config (Claude Code / Cursor / …)
-   {
-     "mcpServers": {
-       "godot": {
-         "type": "http",
-         "url": "http://127.0.0.1:8787/mcp"
-       }
-     }
-   }
+   { "mcpServers": { "godot": { "type": "http", "url": "http://127.0.0.1:8788/mcp" } } }
    ```
-   Start it with `python tools/godot-mcp/server.py` (or, for stdio:
-   `GODOT_MCP_TRANSPORT=stdio python tools/godot-mcp/server.py`).
 
-## Env vars
+Bind host/port are constants in `mcp_bridge.gd` (`HOST`, `HTTP_PORT` = 8788).
 
-| var | default | meaning |
-|-----|---------|---------|
-| `GODOT_MCP_TRANSPORT` | `streamable-http` | `streamable-http` \| `sse` \| `stdio` |
-| `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8787` | HTTP transport bind |
-| `GODOT_MCP_HOST` / `GODOT_MCP_PORT` | `127.0.0.1` / `9510` | editor-bridge TCP |
-| `GODOT_MCP_TIMEOUT` | `30` | per-command timeout (s) |
+## Tests
+
+Headless, no editor needed:
+```
+godot --headless --path tools/godot-mcp --script res://tests/test_commands.gd
+godot --headless --path tools/godot-mcp --script res://tests/test_protocol.gd
+godot --headless --path tools/godot-mcp --script res://tests/test_http.gd
+```
 
 ## Status / parity
 

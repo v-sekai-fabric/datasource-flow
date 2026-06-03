@@ -1,0 +1,135 @@
+@tool
+extends RefCounted
+class_name MCPProtocol
+## Pure MCP / JSON-RPC 2.0 handler — no transport, no HTTP. Turns a decoded
+## JSON-RPC request into a response Dictionary (or null for notifications),
+## dispatching tools/call to MCPCommands. This lets the Godot addon BE the MCP
+## server (streamable-HTTP) with no external Python process; mcp_http_server.gd
+## wraps this in a TCP/HTTP loop. Unit-tested headless (tests/test_protocol.gd).
+
+const PROTOCOL_VERSION := "2025-06-18"
+const SERVER_NAME := "godot-mcp"
+const SERVER_VERSION := "0.1.0"
+
+# Relative preload (not the class_name global) so this resolves headless and
+# wherever the addon is installed.
+const MCPCommandsLib = preload("mcp_commands.gd")
+
+var commands = null  # MCPCommands instance
+var _rpc := JSONRPC.new()   # Godot's built-in JSON-RPC envelope helper
+
+
+func _init() -> void:
+	if commands == null:
+		commands = MCPCommandsLib.new()
+
+
+# --- JSON-RPC entry ----------------------------------------------------------
+
+## Returns a JSON-RPC response Dictionary, or null when the message is a
+## notification (no "id") that needs no reply.
+func handle_rpc(req) -> Variant:
+	if typeof(req) != TYPE_DICTIONARY:
+		return _error(null, -32600, "invalid request")
+	var id = req.get("id", null)
+	var method := String(req.get("method", ""))
+	match method:
+		"initialize":
+			return _result(id, {
+				"protocolVersion": PROTOCOL_VERSION,
+				"capabilities": { "tools": { "listChanged": false } },
+				"serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
+			})
+		"notifications/initialized", "notifications/cancelled":
+			return null
+		"ping":
+			return _result(id, {})
+		"tools/list":
+			return _result(id, { "tools": _tool_schemas() })
+		"tools/call":
+			return _call_tool(id, req.get("params", {}))
+		_:
+			if id == null:
+				return null  # unknown notification: ignore
+			return _error(id, -32601, "method not found: " + method)
+
+
+func _result(id, value) -> Dictionary:
+	return _rpc.make_response(value, id)
+
+func _error(id, code: int, msg: String) -> Dictionary:
+	return _rpc.make_response_error(code, msg, id)
+
+
+# --- tools/call --------------------------------------------------------------
+
+func _call_tool(id, params) -> Dictionary:
+	if typeof(params) != TYPE_DICTIONARY:
+		return _error(id, -32602, "invalid params")
+	var name := String(params.get("name", ""))
+	var args = params.get("arguments", {})
+	if typeof(args) != TYPE_DICTIONARY:
+		args = {}
+	if not _tool_names().has(name):
+		return _error(id, -32602, "unknown tool: " + name)
+	var out = commands.dispatch(name, args)
+	var is_err: bool = out is Dictionary and out.get("__error__", false)
+	var text := JSON.stringify(out.get("msg", "error")) if is_err else JSON.stringify(out)
+	# MCP tool result: content blocks + isError flag (tool errors are reported
+	# in-band, not as JSON-RPC errors).
+	return _result(id, {
+		"content": [ { "type": "text", "text": text } ],
+		"isError": is_err,
+	})
+
+
+# --- tool registry -----------------------------------------------------------
+# Tool name == MCPCommands dispatch command; arguments pass straight through.
+
+func _tool_defs() -> Array:
+	return [
+		["ping", "Check the bridge; returns the Godot engine version.", {}],
+		["get_scene_tree", "Dump the edited scene's node tree.", { "max_depth": "integer" }],
+		["get_node", "Get a node and its editor properties.", { "path": "string" }],
+		["get_property", "Read any property of a node by name.", { "path": "string", "property": "string" }],
+		["set_property", "Set any property of a node by name.", { "path": "string", "property": "string", "value": "any" }],
+		["call_method", "Call any method on a node by name.", { "path": "string", "method": "string", "args": "array" }],
+		["list_methods", "List a node's callable methods.", { "path": "string" }],
+		["list_properties", "List a node's editor properties.", { "path": "string" }],
+		["create_node", "Create a node of a class under a parent.", { "parent": "string", "type": "string", "name": "string" }],
+		["delete_node", "Delete a node (not the root).", { "path": "string" }],
+		["reparent_node", "Move a node under a new parent.", { "path": "string", "new_parent": "string" }],
+		["set_script", "Attach a script (res://…) to a node.", { "path": "string", "script": "string" }],
+		["run_script", "Run a GDScript snippet (body of run(editor, root)).", { "source": "string" }],
+		["open_scene", "Open a scene by res:// path.", { "path": "string" }],
+		["save_scene", "Save the edited scene.", {}],
+		["get_open_scene", "Path + root of the edited scene.", {}],
+		["list_scenes", "List all res:// .tscn scenes.", {}],
+		["play_scene", "Run the current (or given) scene.", { "path": "string" }],
+		["play_main", "Run the project's main scene.", {}],
+		["stop", "Stop the running scene.", {}],
+		["is_playing", "Whether a scene is playing.", {}],
+		["get_performance", "Godot Performance monitors (fps, memory, draw calls…).", { "monitors": "array" }],
+		["read_log", "Read the editor Output console (best-effort).", { "lines": "integer" }],
+		["screenshot", "Capture the editor viewport to a PNG.", { "path": "string" }],
+	]
+
+func _tool_names() -> PackedStringArray:
+	var names := PackedStringArray()
+	for t in _tool_defs():
+		names.append(t[0])
+	return names
+
+func _tool_schemas() -> Array:
+	var out := []
+	for t in _tool_defs():
+		var props := {}
+		for pname in t[2]:
+			var ptype: String = t[2][pname]
+			props[pname] = {} if ptype == "any" else { "type": ptype }
+		out.append({
+			"name": t[0],
+			"description": t[1],
+			"inputSchema": { "type": "object", "properties": props },
+		})
+	return out
