@@ -50,6 +50,24 @@
   howpublished = {\url{https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FSkeletalMeshRenderData}}
 }
 
+@misc{ivanmurzak_unity_mcp,
+  title        = {Unity-MCP (com.ivanmurzak.unity.mcp): MCP server + Unity Editor plugin},
+  author       = {Murzak, Ivan},
+  howpublished = {\url{https://github.com/IvanMurzak/Unity-MCP}},
+  note         = {The Unity MCP we mirror for tools/godot-mcp. Editor plugin + standalone
+                  C\#/.NET server over stdio / streamable-http; ~70 tools; reflection-based
+                  ``any method becomes a tool''. OpenUPM: com.ivanmurzak.unity.mcp}
+}
+
+@misc{godot_sandbox,
+  title        = {Godot Sandbox module (modules/sandbox)},
+  author       = {{V-Sekai} and {libriscv contributors}},
+  howpublished = {\url{https://github.com/v-sekai-multiplayer-fabric/godot/tree/feat/sandbox}},
+  note         = {Reference for dynamic reflection: program/cpp/api calls Godot
+                  methods/properties by name via the Variant API from guest code —
+                  the same Variant-by-name model used by tools/godot-mcp's reflection tools}
+}
+
 @misc{ue427_get_ref_skeleton,
   title        = {{USkeletalMesh::GetRefSkeleton} — Unreal Engine 4.27 API Reference},
   author       = {{Epic Games}},
