@@ -59,6 +59,24 @@
                   ``any method becomes a tool''. OpenUPM: com.ivanmurzak.unity.mcp}
 }
 
+@misc{aws_constant_work,
+  title        = {Reliability, constant work, and a good cup of coffee},
+  author       = {{Amazon Web Services} and Brooker, Marc},
+  howpublished = {\url{https://aws.amazon.com/builders-library/reliability-and-constant-work/}},
+  series       = {The Amazon Builders' Library},
+  note         = {Design source for tools/godot-mcp mcp_command_buffer.gd — fixed-capacity
+                  ring + constant per-frame drain budget so editor frame cost does not scale
+                  with MCP request load (bounded work, explicit backpressure)}
+}
+
+@misc{godot_jsonrpc,
+  title        = {Godot Engine {JSONRPC} class},
+  author       = {{Godot Engine contributors}},
+  howpublished = {\url{https://docs.godotengine.org/en/stable/classes/class_jsonrpc.html}},
+  note         = {Built-in JSON-RPC 2.0 envelope helper used by tools/godot-mcp mcp_protocol.gd
+                  (make_response / make_response_error)}
+}
+
 @misc{godot_sandbox,
   title        = {Godot Sandbox module (modules/sandbox)},
   author       = {{V-Sekai} and {libriscv contributors}},

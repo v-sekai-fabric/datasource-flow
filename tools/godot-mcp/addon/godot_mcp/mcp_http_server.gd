@@ -10,11 +10,14 @@ class_name MCPHttpServer
 ## tested headless (tests/test_http.gd); poll() does the TCP/HTTP plumbing.
 
 const MCPProtocolLib = preload("mcp_protocol.gd")
+const BufferLib = preload("mcp_command_buffer.gd")
 const DEFAULT_PORT := 8788
+const DRAIN_PER_FRAME := 16     # constant per-frame execution budget
 
 var protocol = MCPProtocolLib.new()
 var _server := TCPServer.new()
-var _clients: Array = []   # [{ peer: StreamPeerTCP, buf: PackedByteArray }]
+var _clients: Array = []        # connections still reading a request
+var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work drain
 
 
 func start(port: int = DEFAULT_PORT, host: String = "127.0.0.1") -> int:
@@ -57,6 +60,9 @@ func route(method: String, path: String, headers: Dictionary, body: String) -> D
 # --- TCP / HTTP plumbing -----------------------------------------------------
 
 func poll() -> void:
+	# --- ingest: accept + parse complete requests into the buffer ----------
+	# Bounded heavy work: parsing is cheap; the expensive part (route ->
+	# protocol -> command dispatch) is deferred to the constant-budget drain.
 	while _server.is_connection_available():
 		_clients.append({ "peer": _server.take_connection(), "buf": PackedByteArray() })
 	for c in _clients.duplicate():
@@ -70,17 +76,29 @@ func poll() -> void:
 			var got := peer.get_data(avail)
 			if got[0] == OK:
 				c.buf.append_array(got[1])
-		_try_request(c)
+		var req = _try_parse(c.buf)
+		if req != null:
+			_clients.erase(c)                         # request complete; leaves the reading set
+			req["peer"] = peer
+			if not _buffer.enqueue(req):
+				# backpressure: answer immediately rather than queueing unboundedly
+				_write(peer, { "code": 503, "ctype": "text/plain", "body": "server busy" },
+					String(req.headers.get("mcp-session-id", "godot-mcp")))
 
-func _try_request(c) -> void:
-	var sep := _find_seq(c.buf, "\r\n\r\n".to_utf8_buffer())
+	# --- constant-work drain: execute at most DRAIN_PER_FRAME requests ------
+	for item in _buffer.drain(DRAIN_PER_FRAME):
+		var r := route(item.method, item.path, item.headers, item.body)
+		_write(item.peer, r, String(item.headers.get("mcp-session-id", "godot-mcp")))
+
+## Parse one complete HTTP request out of `buf` (mutating it), or null if more
+## bytes are needed. Returns { method, path, headers, body }.
+func _try_parse(buf: PackedByteArray):
+	var sep := _find_seq(buf, "\r\n\r\n".to_utf8_buffer())
 	if sep < 0:
-		return                                   # headers incomplete
-	var header_text: String = c.buf.slice(0, sep).get_string_from_utf8()
+		return null                                   # headers incomplete
+	var header_text: String = buf.slice(0, sep).get_string_from_utf8()
 	var lines := header_text.split("\r\n")
 	var rl := lines[0].split(" ")
-	var method := rl[0] if rl.size() > 0 else ""
-	var path := rl[1] if rl.size() > 1 else "/"
 	var headers := {}
 	for i in range(1, lines.size()):
 		var idx := lines[i].find(":")
@@ -88,18 +106,22 @@ func _try_request(c) -> void:
 			headers[lines[i].substr(0, idx).strip_edges().to_lower()] = lines[i].substr(idx + 1).strip_edges()
 	var clen := int(headers.get("content-length", "0"))
 	var body_start := sep + 4
-	if c.buf.size() < body_start + clen:
-		return                                   # body incomplete
-	var body: String = c.buf.slice(body_start, body_start + clen).get_string_from_utf8()
-	c.buf = c.buf.slice(body_start + clen)
-	var r := route(method, path, headers, body)
-	_write(c.peer, r, String(headers.get("mcp-session-id", "godot-mcp")))
+	if buf.size() < body_start + clen:
+		return null                                   # body incomplete
+	var body: String = buf.slice(body_start, body_start + clen).get_string_from_utf8()
+	# NOTE: callers drop the connection after one response; we don't reslice buf.
+	return {
+		"method": (rl[0] if rl.size() > 0 else ""),
+		"path": (rl[1] if rl.size() > 1 else "/"),
+		"headers": headers,
+		"body": body,
+	}
 
 func _write(peer: StreamPeerTCP, r: Dictionary, session: String) -> void:
 	var code := int(r.code)
 	var status: String = {
 		200: "OK", 202: "Accepted", 204: "No Content",
-		404: "Not Found", 405: "Method Not Allowed",
+		404: "Not Found", 405: "Method Not Allowed", 503: "Service Unavailable",
 	}.get(code, "OK")
 	var body_bytes := String(r.body).to_utf8_buffer()
 	var h := "HTTP/1.1 %d %s\r\n" % [code, status]
