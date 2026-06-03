@@ -12,6 +12,7 @@
 namespace godot
 {
     class Node3D;
+    class Skeleton3D;
     class Texture2D;
     class StandardMaterial3D;
 }
