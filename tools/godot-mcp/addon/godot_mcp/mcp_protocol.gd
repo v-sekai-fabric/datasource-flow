@@ -112,6 +112,41 @@ func _tool_defs() -> Array:
 		["get_performance", "Godot Performance monitors (fps, memory, draw calls…).", { "monitors": "array" }],
 		["read_log", "Read the editor Output console (best-effort).", { "lines": "integer" }],
 		["screenshot", "Capture the editor viewport to a PNG.", { "path": "string" }],
+		# profiling / diagnostics
+		["list_monitors", "List available Performance monitor keys.", {}],
+		["get_memory_info", "Static memory usage + peak.", {}],
+		["get_os_info", "OS name/model/locale/processor/threads.", {}],
+		["get_video_info", "Video adapter name/vendor/API.", {}],
+		# project / assets
+		["read_file", "Read a text file (res:// or user://).", { "path": "string" }],
+		["write_file", "Write text to a file.", { "path": "string", "text": "string" }],
+		["file_exists", "Whether a file or dir exists.", { "path": "string" }],
+		["delete_file", "Delete a file.", { "path": "string" }],
+		["list_dir", "List files + subdirs of a directory.", { "path": "string" }],
+		["find_files", "Recursively find files by extension under a root.", { "root": "string", "ext": "string" }],
+		["create_script", "Write a new GDScript file.", { "path": "string", "source": "string" }],
+		["create_scene", "Create + save a new .tscn with a typed root.", { "path": "string", "root_type": "string", "root_name": "string" }],
+		["instance_scene", "Instance a PackedScene under a parent.", { "scene": "string", "parent": "string" }],
+		["save_branch_as_scene", "Pack a node subtree and save it as a .tscn.", { "path": "string", "scene": "string" }],
+		["get_project_setting", "Read a ProjectSettings value.", { "setting": "string" }],
+		["set_project_setting", "Set a ProjectSettings value.", { "setting": "string", "value": "any" }],
+		# scene / hierarchy
+		["duplicate_node", "Duplicate a node under its parent.", { "path": "string" }],
+		["move_child", "Reorder a node among its siblings.", { "path": "string", "to_index": "integer" }],
+		["add_to_group", "Add a node to a group.", { "path": "string", "group": "string" }],
+		["remove_from_group", "Remove a node from a group.", { "path": "string", "group": "string" }],
+		["get_nodes_in_group", "Paths of nodes in a group.", { "group": "string" }],
+		["find_nodes", "Find nodes by name pattern and/or type.", { "name": "string", "type": "string" }],
+		["get_node_count", "Count nodes under the scene root.", {}],
+		# reflection: ClassDB / signals / singletons
+		["class_exists", "Whether a Godot class exists.", { "class": "string" }],
+		["get_class_methods", "Methods of a class (ClassDB).", { "class": "string", "no_inheritance": "boolean" }],
+		["get_class_properties", "Properties of a class (ClassDB).", { "class": "string", "no_inheritance": "boolean" }],
+		["list_signals", "Signals of a node.", { "path": "string" }],
+		["emit_signal", "Emit a node signal.", { "path": "string", "signal": "string", "args": "array" }],
+		["connect_signal", "Connect a node signal to a target method.", { "path": "string", "signal": "string", "target": "string", "method": "string" }],
+		["call_singleton", "Call a method on an Engine singleton (Input, OS…).", { "singleton": "string", "method": "string", "args": "array" }],
+		["get_editor_setting", "Read an EditorSettings value.", { "setting": "string" }],
 	]
 
 func _tool_names() -> PackedStringArray:

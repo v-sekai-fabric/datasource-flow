@@ -53,8 +53,46 @@ func dispatch(cmd: String, a: Dictionary):
 			return { "playing": editor.is_playing_scene() }
 		"read_log": return _cmd_read_log(a)
 		"screenshot": return _cmd_screenshot(a)
-		# --- profiling (parity) ---
+		# --- profiling / diagnostics ---
 		"get_performance": return _cmd_get_performance(a)
+		"list_monitors": return { "monitors": ["fps","frame_time","physics_frame_time","static_memory","object_count","node_count","resource_count","draw_calls","video_memory"] }
+		"get_memory_info": return { "static": OS.get_static_memory_usage(), "static_peak": OS.get_static_memory_peak_usage() }
+		"get_os_info": return { "name": OS.get_name(), "model": OS.get_model_name(), "locale": OS.get_locale(), "processor": OS.get_processor_name(), "threads": OS.get_processor_count() }
+		"get_video_info": return { "adapter": RenderingServer.get_video_adapter_name(), "vendor": RenderingServer.get_video_adapter_vendor(), "api": RenderingServer.get_video_adapter_api_version() }
+		# --- project / assets ---
+		"read_file": return _cmd_read_file(a)
+		"write_file": return _cmd_write_file(a)
+		"file_exists": return { "exists": FileAccess.file_exists(String(a.get("path",""))) or DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(String(a.get("path","")))) }
+		"delete_file": return _cmd_delete_file(a)
+		"list_dir": return _cmd_list_dir(a)
+		"find_files": return { "files": _scan_ext(String(a.get("root","res://")), String(a.get("ext",""))) }
+		"create_script": return _cmd_create_script(a)
+		"create_scene": return _cmd_create_scene(a)
+		"instance_scene": return _cmd_instance_scene(a)
+		"save_branch_as_scene": return _cmd_save_branch_as_scene(a)
+		"get_project_setting": return { "value": _to_json(ProjectSettings.get_setting(String(a.get("setting","")), a.get("default"))) }
+		"set_project_setting":
+			ProjectSettings.set_setting(String(a.get("setting","")), _coerce(a.get("value"), TYPE_NIL))
+			return { "ok": true }
+		# --- scene / hierarchy ---
+		"duplicate_node": return _cmd_duplicate_node(a)
+		"move_child": return _cmd_move_child(a)
+		"add_to_group": return _cmd_group(a, true)
+		"remove_from_group": return _cmd_group(a, false)
+		"get_nodes_in_group": return _cmd_get_nodes_in_group(a)
+		"find_nodes": return _cmd_find_nodes(a)
+		"get_node_count": return { "count": _count_descendants(root) }
+		# --- scripting / reflection (ClassDB + signals + singletons) ---
+		"class_exists": return { "exists": ClassDB.class_exists(String(a.get("class",""))) }
+		"get_class_methods": return _cmd_class_members(a, true)
+		"get_class_properties": return _cmd_class_members(a, false)
+		"list_signals": return _cmd_list_signals(a)
+		"emit_signal": return _cmd_emit_signal(a)
+		"connect_signal": return _cmd_connect_signal(a)
+		"call_singleton": return _cmd_call_singleton(a)
+		"get_editor_setting":
+			if editor == null: return _need_editor()
+			return { "value": _to_json(editor.get_editor_settings().get_setting(String(a.get("setting","")))) }
 		_:
 			return _err("unknown cmd: " + cmd)
 
@@ -241,6 +279,217 @@ func _cmd_get_performance(a: Dictionary):
 			continue
 		out[key] = Performance.get_monitor(names[key])
 	return { "monitors": out }
+
+
+# --- project / assets -------------------------------------------------------
+
+func _cmd_read_file(a: Dictionary):
+	var path := String(a.get("path", ""))
+	if not FileAccess.file_exists(path):
+		return _err("file not found: " + path)
+	return { "text": FileAccess.open(path, FileAccess.READ).get_as_text() }
+
+func _cmd_write_file(a: Dictionary):
+	var f := FileAccess.open(String(a.get("path", "")), FileAccess.WRITE)
+	if f == null:
+		return _err("cannot open for write: " + String(a.get("path", "")))
+	f.store_string(String(a.get("text", "")))
+	f.close()
+	return { "ok": true }
+
+func _cmd_delete_file(a: Dictionary):
+	var g := ProjectSettings.globalize_path(String(a.get("path", "")))
+	var err := DirAccess.remove_absolute(g)
+	return { "ok": true } if err == OK else _err("delete failed (%d)" % err)
+
+func _cmd_list_dir(a: Dictionary):
+	var path := String(a.get("path", "res://"))
+	var d := DirAccess.open(path)
+	if d == null:
+		return _err("cannot open dir: " + path)
+	var files := []
+	var dirs := []
+	d.list_dir_begin()
+	var n := d.get_next()
+	while n != "":
+		if n != "." and n != "..":
+			if d.current_is_dir():
+				dirs.append(n)
+			else:
+				files.append(n)
+		n = d.get_next()
+	d.list_dir_end()
+	return { "files": files, "dirs": dirs }
+
+func _cmd_create_script(a: Dictionary):
+	var path := String(a.get("path", ""))
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return _err("cannot write script: " + path)
+	f.store_string(String(a.get("source", "extends Node\n")))
+	f.close()
+	return { "created": path }
+
+func _cmd_create_scene(a: Dictionary):
+	var type := String(a.get("root_type", "Node"))
+	if not ClassDB.can_instantiate(type):
+		return _err("cannot instantiate: " + type)
+	var r: Node = ClassDB.instantiate(type)
+	r.name = String(a.get("root_name", type))
+	var ps := PackedScene.new()
+	if ps.pack(r) != OK:
+		r.free()
+		return _err("pack failed")
+	var werr := ResourceSaver.save(ps, String(a.get("path", "")))
+	r.free()
+	return { "created": String(a.get("path", "")) } if werr == OK else _err("save failed (%d)" % werr)
+
+func _cmd_instance_scene(a: Dictionary):
+	if root == null:
+		return _err("no scene root")
+	var scene = load(String(a.get("scene", "")))
+	if scene == null or not (scene is PackedScene):
+		return _err("not a PackedScene: " + String(a.get("scene", "")))
+	var parent := _resolve(String(a.get("parent", ".")))
+	if parent == null:
+		return _err("parent not found")
+	var inst: Node = scene.instantiate()
+	parent.add_child(inst)
+	inst.owner = root
+	return { "instanced": String(root.get_path_to(inst)) }
+
+func _cmd_save_branch_as_scene(a: Dictionary):
+	var n := _resolve(String(a.get("path", ".")))
+	if n == null:
+		return _err("node not found")
+	var ps := PackedScene.new()
+	if ps.pack(n) != OK:
+		return _err("pack failed")
+	var werr := ResourceSaver.save(ps, String(a.get("scene", "")))
+	return { "saved": String(a.get("scene", "")) } if werr == OK else _err("save failed (%d)" % werr)
+
+
+# --- scene / hierarchy (more) -----------------------------------------------
+
+func _cmd_duplicate_node(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	if n == root:
+		return _err("cannot duplicate the scene root")
+	var dup := n.duplicate()
+	n.get_parent().add_child(dup)
+	dup.owner = root
+	return { "duplicated": String(root.get_path_to(dup)) }
+
+func _cmd_move_child(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	n.get_parent().move_child(n, int(a.get("to_index", 0)))
+	return { "index": n.get_index() }
+
+func _cmd_group(a: Dictionary, add: bool):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	if add:
+		n.add_to_group(String(a.get("group", "")), true)
+	else:
+		n.remove_from_group(String(a.get("group", "")))
+	return { "ok": true }
+
+func _cmd_get_nodes_in_group(a: Dictionary):
+	if root == null:
+		return _err("no scene root")
+	var g := String(a.get("group", ""))
+	var out := []
+	if root.is_in_group(g):
+		out.append(".")
+	for n in root.find_children("*", "", true, false):
+		if n.is_in_group(g):
+			out.append(String(root.get_path_to(n)))
+	return { "nodes": out }
+
+func _cmd_find_nodes(a: Dictionary):
+	if root == null:
+		return _err("no scene root")
+	var pat := String(a.get("name", "*"))
+	if pat == "":
+		pat = "*"
+	var out := []
+	for n in root.find_children(pat, String(a.get("type", "")), true, false):
+		out.append({ "path": String(root.get_path_to(n)), "type": n.get_class(), "name": String(n.name) })
+	return { "nodes": out }
+
+func _count_descendants(n) -> int:
+	if n == null:
+		return 0
+	var c := 1
+	for ch in n.get_children():
+		c += _count_descendants(ch)
+	return c
+
+
+# --- reflection: ClassDB / signals / singletons -----------------------------
+
+func _cmd_class_members(a: Dictionary, methods: bool):
+	var cls := String(a.get("class", ""))
+	if not ClassDB.class_exists(cls):
+		return _err("no such class: " + cls)
+	var out := []
+	var no_inherit := bool(a.get("no_inheritance", false))
+	if methods:
+		for m in ClassDB.class_get_method_list(cls, no_inherit):
+			out.append(m.name)
+	else:
+		for p in ClassDB.class_get_property_list(cls, no_inherit):
+			out.append(p.name)
+	return { "members": out }
+
+func _cmd_list_signals(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	var out := []
+	for s in n.get_signal_list():
+		out.append(s.name)
+	return { "signals": out }
+
+func _cmd_emit_signal(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	var args := [String(a.get("signal", ""))]
+	var raw = a.get("args", [])
+	if raw is Array:
+		for v in raw:
+			args.append(_coerce(v, TYPE_NIL))
+	n.callv("emit_signal", args)
+	return { "ok": true }
+
+func _cmd_connect_signal(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	var target := _resolve(String(a.get("target", "")))
+	if n == null or target == null:
+		return _err("node or target not found")
+	var err := n.connect(String(a.get("signal", "")), Callable(target, String(a.get("method", ""))))
+	return { "ok": true } if err == OK else _err("connect failed (%d)" % err)
+
+func _cmd_call_singleton(a: Dictionary):
+	var sname := String(a.get("singleton", ""))
+	if not Engine.has_singleton(sname):
+		return _err("no such singleton: " + sname)
+	var s = Engine.get_singleton(sname)
+	var method := String(a.get("method", ""))
+	if not s.has_method(method):
+		return _err("singleton has no method: " + method)
+	var args := []
+	var raw = a.get("args", [])
+	if raw is Array:
+		for v in raw:
+			args.append(_coerce(v, TYPE_NIL))
+	return { "value": _to_json(s.callv(method, args)) }
 
 
 # --- logs / screenshot (need editor) ----------------------------------------
