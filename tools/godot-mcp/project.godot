@@ -1,0 +1,10 @@
+; Minimal Godot 4 project so the godot_mcp addon scripts can be unit-tested
+; headless (godot --headless --path tools/godot-mcp --script res://tests/test_commands.gd).
+; Not a runtime app; the addon is meant to be copied into a real project's addons/.
+
+config_version=5
+
+[application]
+
+config/name="godot_mcp_tests"
+config/features=PackedStringArray("4.3")
