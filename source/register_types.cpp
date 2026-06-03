@@ -20,6 +20,8 @@
 
 #include "exporter/IDTXFlowExporter.h"
 
+#include "idtx_core_loader.h"
+
 using namespace godot;
 
 // Static logger instance — lives for the lifetime of this dll
@@ -62,7 +64,12 @@ void initialize_idtxflow_module(ModuleInitializationLevel p_level) {
 
     // Initialize logger
     idtxflow::utils::Log::set_logger(&g_logger);
-    
+
+    // CHI-312: load libidtx_core via the generated dlopen table (delay-load on
+    // Windows, dlsym stubs on POSIX) before any idtx_core_* call. The extension
+    // no longer link-depends on core or its static OpenUSD.
+    idtxflow::load_idtx_core();
+
     GDREGISTER_CLASS(UsdStageNode3D)
     GDREGISTER_CLASS(UsdXformNode3D)
     GDREGISTER_CLASS(UsdMeshInstanceNode3D)

@@ -72,6 +72,10 @@ def _build_extension(env):
         # libidtx_core — engine-agnostic C ABI. Avatar conversion logic
         # lives here so the Unity P/Invoke assembly can share it.
         "core/include",
+        # CHI-312: generated dlopen table (idtx_core_stubs.{h,cc}) +
+        # libidtx_core.<plat>.def — the extension loads core at runtime via
+        # this table instead of link-binding it (and its static OpenUSD).
+        "core/generated",
         # LEMON (cgg-bern/lemon @ cgg) — vendored as a submodule under
         # libs/lemon for the CHI-253 tris-to-quads max-weight matching
         # in source/exporter/UsdGodotStageExporter.cpp. libs/lemon-config
@@ -132,12 +136,16 @@ def _build_extension(env):
                 extension_env.Append(LIBPATH=[os.path.join(_vcpkg_installed, "lib")])
                 extension_env.Append(CPPPATH=[os.path.join(_vcpkg_installed, "include")])
         
+    # CHI-312: libidtx_core is NOT linked here. It is loaded at runtime via the
+    # generated dlopen table (Windows: delay-load against an import lib derived
+    # from the checked-in .def; POSIX: idtx_core_stubs.cc dlsym thunks). See the
+    # delay-load / stubs wiring below and source/idtx_core_loader.cpp.
+    core_lib_basename = f"libidtx_core.{platform_name}.{build_arch}"
     libs = [
         "usd_ms", "tbb12" if platform_name == "windows" else "tbb.12",
         f"libgodot-cpp.{platform_name}.{build_target}.{build_arch}",
         "ixwebsocket",
         "libidtx_usd",  # USD extension library
-        f"libidtx_core.{platform_name}.{build_arch}",  # engine-agnostic C ABI
     ]
 
     # OpenSSL static libs (all platforms)
@@ -156,6 +164,8 @@ def _build_extension(env):
         extension_env.Append(CCFLAGS=["-O3" if build_target == "template_release" else "-g"])
 
     extension_env.Append(CPPDEFINES=["IDTXFLOW_ENABLED", "IDTXFLOW_GODOT_EXPORTS", "THREADS_ENABLED", "GDEXTENSION"])
+    # CHI-312: tell the runtime loader the exact core lib basename to dlopen.
+    extension_env.Append(CPPDEFINES=[("IDTX_CORE_LIB_BASENAME", f'\\"{core_lib_basename}\\"')])
 
     # Platform-specific configuration
     if platform_name == "linux":
@@ -164,8 +174,13 @@ def _build_extension(env):
         extension_env.Append(LINKFLAGS=["-Wl,-rpath,$ORIGIN"])
 
     elif platform_name == "windows":
-        # ws2_32, crypt32, user32 are required by IXWebSocket + OpenSSL on Windows
-        extension_env.Append(LIBS=libs + ["advapi32", "shell32", "ole32", "ws2_32", "crypt32", "user32"])
+        # ws2_32, crypt32, user32 are required by IXWebSocket + OpenSSL on Windows.
+        # CHI-312: link the delay-load import lib (built from the .def below) +
+        # delayimp; /DELAYLOAD defers binding until idtx_core_loader LoadLibraryEx's
+        # the bundled DLL, so there is zero static link to core or its OpenUSD.
+        extension_env.Append(LIBS=libs + [core_lib_basename + "_delayload", "delayimp",
+                                          "advapi32", "shell32", "ole32", "ws2_32", "crypt32", "user32"])
+        extension_env.Append(LINKFLAGS=[f"/DELAYLOAD:{core_lib_basename}.dll"])
         extension_env.Append(CPPDEFINES=["NOMINMAX", "WIN32_LEAN_AND_MEAN", "_ITERATOR_DEBUG_LEVEL=0"])
         if build_target in ["editor", "template_debug"]:
             # DEBUG
@@ -204,6 +219,22 @@ def _build_extension(env):
     if platform_name == "windows":
         sources.append(extension_env.File("libs/lemon/lemon/bits/windows.cc"))
 
+    # CHI-312: dlopen table wiring.
+    #   POSIX — compile the generated dlsym forwarding thunks; idtx_core_loader
+    #     calls core::InitializeStubs to dlopen the lib and fill them.
+    #   Windows — derive a delay-load import lib from the checked-in .def (no
+    #     dependency on core's build output), linked above with /DELAYLOAD.
+    delay_import_lib = None
+    if platform_name == "windows":
+        core_def = os.path.join("core", "generated", "libidtx_core.windows.def")
+        delay_import_lib = extension_env.Command(
+            f"build/idtx_core/{core_lib_basename}_delayload.lib",
+            core_def,
+            f'lib /nologo /def:"$SOURCE" /out:"$TARGET" /machine:{ "X64" if build_arch == "x86_64" else "ARM64" }',
+        )
+    else:
+        sources.append(extension_env.File("core/generated/idtx_core_stubs.cc"))
+
     # filter the source files in the gen subfolder
     exclude_dir = os.path.normpath("source/gen")
     try:
@@ -233,11 +264,11 @@ def _build_extension(env):
     # Build the library
     library = extension_env.SharedLibrary(f"{build_dir}/{library_name}.{library_extension}", sources)
 
-    # Explicit dependency on libidtx_core — the link step consumes its
-    # .lib import library, so SCons must order them. Without this, -j8
-    # races between core's library build and gdextension's link.
-    if 'idtx_core_library_node' in env:
-        extension_env.Depends(library, env['idtx_core_library_node'])
+    # CHI-312: the extension no longer link-consumes core's import lib, so it no
+    # longer needs to wait for core's library build. On Windows it instead
+    # depends on the delay-load import lib derived from the checked-in .def.
+    if delay_import_lib is not None:
+        extension_env.Depends(library, delay_import_lib)  # build/idtx_core already on LIBPATH
 
     # Determine PDB path
     pdb_file = None
