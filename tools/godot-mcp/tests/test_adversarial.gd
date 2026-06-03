@@ -101,6 +101,21 @@ return d" })
 	# 13) instance_scene with a non-PackedScene resource must error.
 	_check(_is_err(c.dispatch("instance_scene", { "scene": "res://addon/godot_mcp/mcp_commands.gd", "parent": "." })), "instance_scene non-scene -> error")
 
+	# 14) reparent a node under its OWN descendant (would create a cycle) must
+	#     not crash. (A->A/Sub; reparent A under Sub.)
+	c.dispatch("create_node", { "parent": "A", "type": "Node3D", "name": "Sub" })
+	var rc = c.dispatch("reparent_node", { "path": "A", "new_parent": "A/Sub" })
+	_check(is_instance_valid(root) and is_instance_valid(kid), "reparent into own descendant did not crash editor")
+
+	# 15) run_script with a RUNTIME error (not a parse error) must return, not crash.
+	var rerr = c.dispatch("run_script", { "source": "return [0][7]" })
+	_check(rerr != null, "run_script runtime error returns (no crash)")
+
+	# 16) connect_signal to a nonexistent signal / missing target must error.
+	_check(_is_err(c.dispatch("connect_signal", { "path": "Kid", "signal": "no_such_signal", "target": "Kid", "method": "queue_free" })), "connect bad signal -> error")
+	_check(_is_err(c.dispatch("connect_signal", { "path": "Kid", "signal": "tree_entered", "target": "Ghost", "method": "x" })), "connect missing target -> error")
+
+
 	root.free()
 
 
