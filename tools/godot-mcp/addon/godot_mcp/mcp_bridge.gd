@@ -317,16 +317,46 @@ func _cmd_run_script(a: Dictionary):
 # --- logs / screenshot (best-effort) ----------------------------------------
 
 func _cmd_read_log(a: Dictionary):
-	# Godot does not expose the editor console to GDScript. Best-effort: tail the
-	# log file if file logging is enabled (Project Settings > Logging).
 	var n := int(a.get("lines", 100))
+	# Preferred: read the editor's Output panel directly. The Output dock is an
+	# `EditorLog` node backed by a RichTextLabel; an editor addon can walk the
+	# editor control tree, find it, and read its parsed text — capturing prints,
+	# warnings and errors as shown in the console.
+	var rtl := _find_editor_log_richtext(get_editor_interface().get_base_control())
+	if rtl != null:
+		var text: String = rtl.get_parsed_text() if rtl.has_method("get_parsed_text") else String(rtl.get("text"))
+		var lines := text.split("\n")
+		var start = max(0, lines.size() - n)
+		return { "source": "editor_output", "lines": lines.slice(start, lines.size()) }
+	# Fallback: tail the log file if file logging is enabled.
 	var path := "user://logs/godot.log"
-	if not FileAccess.file_exists(path):
-		return { "lines": [], "note": "file logging disabled (no user://logs/godot.log)" }
-	var f := FileAccess.open(path, FileAccess.READ)
-	var all := f.get_as_text().split("\n")
-	var start = max(0, all.size() - n)
-	return { "lines": all.slice(start, all.size()) }
+	if FileAccess.file_exists(path):
+		var f := FileAccess.open(path, FileAccess.READ)
+		var all := f.get_as_text().split("\n")
+		var s2 = max(0, all.size() - n)
+		return { "source": "log_file", "lines": all.slice(s2, all.size()) }
+	return { "lines": [], "note": "could not locate the EditorLog RichTextLabel and file logging is disabled" }
+
+func _find_editor_log_richtext(node: Node) -> RichTextLabel:
+	# The Output dock is an EditorLog control; its RichTextLabel holds the text.
+	if node.get_class() == "EditorLog":
+		var r := _first_richtext(node)
+		if r != null:
+			return r
+	for child in node.get_children():
+		var found := _find_editor_log_richtext(child)
+		if found != null:
+			return found
+	return null
+
+func _first_richtext(node: Node) -> RichTextLabel:
+	if node is RichTextLabel:
+		return node
+	for child in node.get_children():
+		var r := _first_richtext(child)
+		if r != null:
+			return r
+	return null
 
 func _cmd_screenshot(a: Dictionary):
 	var img: Image = get_editor_interface().get_base_control().get_viewport().get_texture().get_image()

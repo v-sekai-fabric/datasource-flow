@@ -79,8 +79,8 @@ eval) is the escape hatch for multi-step logic, equivalent to Unity execute-C#.
 
 ## Status / parity
 
-v1 covers Scene-Hierarchy, Scripting/Editor (reflection + eval), play mode, and
-basic console/screenshot — the core of the Unity-MCP surface. Not yet: the
-Profiling/Diagnostics category, asset-pipeline operations beyond scenes, and a
-robust editor-console capture (Godot exposes no console API to GDScript; current
-`read_log` tails the log file). Tracked in Linear CHI-313.
+v1 covers Scene-Hierarchy, Scripting/Editor (reflection + eval), play mode,
+screenshot, and **editor-console capture** (`read_log` reads the Output dock's
+`EditorLog` RichTextLabel directly — prints/warnings/errors — falling back to
+the log file). Not yet: the Profiling/Diagnostics category and asset-pipeline
+operations beyond scenes. Tracked in Linear CHI-313.
