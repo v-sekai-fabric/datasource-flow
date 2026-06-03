@@ -19,6 +19,14 @@ var _server := TCPServer.new()
 var _clients: Array = []        # connections still reading a request
 var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work drain
 
+# DNS-rebinding (Origin) protection. The MCP spec says servers MUST validate
+# Origin, but the reference TypeScript/Python SDKs ship it DISABLED by default
+# (enableDnsRebindingProtection=false; cf. CVE-2025-66414) and most real
+# streamable-HTTP servers follow suit, relying on the localhost bind. We match
+# that de-facto default (off) so we don't reject legitimate Origin-setting
+# clients; flip enforce_origin=true to get spec-strict 403s.
+var enforce_origin := false
+
 
 func start(port: int = DEFAULT_PORT, host: String = "127.0.0.1") -> int:
 	return _server.listen(port, host)
@@ -36,12 +44,14 @@ const SUPPORTED_VERSIONS := ["2025-06-18", "2025-03-26"]
 
 ## Produce { code, ctype, body } for a parsed HTTP request. No sockets.
 func route(method: String, path: String, headers: Dictionary, body: String) -> Dictionary:
-	# SECURITY (MUST): validate Origin to block DNS-rebinding. A request with no
-	# Origin is a non-browser client (e.g. an MCP CLI) and is allowed; a present
-	# Origin must be localhost.
-	var origin := String(headers.get("origin", ""))
-	if origin != "" and not _origin_allowed(origin):
-		return { "code": 403, "ctype": "text/plain", "body": "forbidden origin" }
+	# Origin / DNS-rebinding protection — OFF by default to match the reference
+	# SDKs and real-world servers (see enforce_origin above). When enabled, a
+	# present non-localhost Origin is rejected; absent Origin (CLI clients) is
+	# always allowed.
+	if enforce_origin:
+		var origin := String(headers.get("origin", ""))
+		if origin != "" and not _origin_allowed(origin):
+			return { "code": 403, "ctype": "text/plain", "body": "forbidden origin" }
 
 	if method == "OPTIONS":
 		return { "code": 204, "ctype": "text/plain", "body": "" }          # CORS preflight

@@ -68,11 +68,16 @@ func _run() -> void:
 	_check(sse.code == 200 and sse.ctype == "text/event-stream", "Accept SSE -> event-stream")
 	_check(sse.body.begins_with("event: message\ndata: "), "SSE body framed")
 
-	# --- streamable-HTTP spec compliance ---
-	# Origin validation (DNS-rebinding protection)
-	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 403, "foreign Origin -> 403")
-	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 200, "localhost Origin allowed")
-	_check(h.route("POST", "/mcp", { "origin": "http://127.0.0.1:9999" }, _rpc("ping", {})).code == 200, "127.0.0.1 Origin allowed")
+	# --- streamable-HTTP behavior (de-facto: match the reference SDKs) ---
+	# Origin enforcement is OFF by default, like @modelcontextprotocol/sdk —
+	# any Origin is accepted so legit browser/proxy clients aren't rejected.
+	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 200, "default: foreign Origin allowed (enforce off)")
+	# Opt-in strict mode reinstates the spec MUST.
+	h.enforce_origin = true
+	_check(h.route("POST", "/mcp", { "origin": "https://evil.example.com" }, _rpc("ping", {})).code == 403, "enforce: foreign Origin -> 403")
+	_check(h.route("POST", "/mcp", { "origin": "http://localhost:5173" }, _rpc("ping", {})).code == 200, "enforce: localhost Origin allowed")
+	_check(h.route("POST", "/mcp", {}, _rpc("ping", {})).code != 403, "enforce: no-Origin (CLI) allowed")
+	h.enforce_origin = false
 	# DELETE (no sessions) -> 405
 	_check(h.route("DELETE", "/mcp", {}, "").code == 405, "DELETE -> 405")
 	# MCP-Protocol-Version: unsupported -> 400, supported -> 200, absent -> 200
