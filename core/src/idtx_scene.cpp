@@ -76,6 +76,24 @@ idtx_mesh_t* finalize_mesh(const S::FMeshData& md) {
     if (!md.Bones.empty() && static_cast<int32_t>(md.Bones.size()) == vcount * 4)
         idtx_mesh_set_skinning(mesh, 4, md.Bones.data(), md.Weights.data());
 
+    // Blend shapes: scatter the sparse SoA deltas back into the dense per-vertex
+    // arrays the C ABI takes, then register each target with its current weight.
+    for (const S::FBlendShape& bs : md.BlendShapes) {
+        if (bs.indices.empty()) continue;
+        const bool has_n = bs.has_normals && bs.nrm_offsets.size() == bs.indices.size();
+        std::vector<float> bpos(static_cast<size_t>(vcount) * 3, 0.0f);
+        std::vector<float> bnrm;
+        if (has_n) bnrm.assign(static_cast<size_t>(vcount) * 3, 0.0f);
+        for (size_t k = 0; k < bs.indices.size(); ++k) {
+            const int32_t vi = bs.indices[k];
+            if (vi < 0 || vi >= vcount) continue;
+            bpos[vi*3+0] = bs.pos_offsets[k].x; bpos[vi*3+1] = bs.pos_offsets[k].y; bpos[vi*3+2] = bs.pos_offsets[k].z;
+            if (has_n) { bnrm[vi*3+0] = bs.nrm_offsets[k].x; bnrm[vi*3+1] = bs.nrm_offsets[k].y; bnrm[vi*3+2] = bs.nrm_offsets[k].z; }
+        }
+        idtx_mesh_add_blendshape(mesh, bs.name.c_str(), bs.weight,
+                                 bpos.data(), has_n ? bnrm.data() : nullptr);
+    }
+
     return mesh;
 }
 

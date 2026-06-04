@@ -238,8 +238,51 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
         }
     }
 
-    out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(), Dictionary(), flags);
+    // Blend shapes (morph targets). Godot stores each target as the ABSOLUTE
+    // morphed geometry (base + delta) in vertex/normal arrays; RELATIVE mode then
+    // adds each weighted delta independently (matches Unity/glTF morph semantics).
+    // Deltas are already in the canonical (== Godot) frame, so no rebasing here.
+    TypedArray<Array> blend_arrays;
+    const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
+    if (bs_count > 0) {
+        out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_RELATIVE);
+        const bool has_n = idtx_mesh_has_normals(mesh);
+        std::vector<float> base_n;
+        if (has_n) { base_n.resize(vc * 3); idtx_mesh_get_normals(mesh, base_n.data()); }
+        for (int32_t b = 0; b < bs_count; ++b) {
+            out->add_blend_shape(StringName(idtx_mesh_get_blendshape_name(mesh, b)));
+            std::vector<float> dp(vc * 3); idtx_mesh_get_blendshape_position_deltas(mesh, b, dp.data());
+            PackedVector3Array bverts; bverts.resize(vc);
+            for (int32_t i = 0; i < vc; ++i) {
+                bverts[i] = Vector3(verts[i].x + dp[i*3], verts[i].y + dp[i*3+1], verts[i].z + dp[i*3+2]);
+            }
+            Array bs_arr; bs_arr.resize(Mesh::ARRAY_MAX);
+            bs_arr[Mesh::ARRAY_VERTEX] = bverts;
+            if (has_n && idtx_mesh_blendshape_has_normals(mesh, b)) {
+                std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
+                PackedVector3Array bnorm; bnorm.resize(vc);
+                for (int32_t i = 0; i < vc; ++i) {
+                    bnorm[i] = Vector3(base_n[i*3] + dn[i*3], base_n[i*3+1] + dn[i*3+1], base_n[i*3+2] + dn[i*3+2]);
+                }
+                bs_arr[Mesh::ARRAY_NORMAL] = bnorm;
+            }
+            blend_arrays.push_back(bs_arr);
+        }
+    }
+
+    out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, blend_arrays, Dictionary(), flags);
     return out;
+}
+
+// Apply each blend shape's current/default weight onto the MeshInstance3D (the
+// mesh must already be set so the shapes exist). Mirrors the configured pose
+// the exporter captured; a RESET to 0 gives the rest pose.
+void apply_blend_shape_weights(MeshInstance3D* mi, idtx_mesh_t* mesh) {
+    if (mi == nullptr || mesh == nullptr) return;
+    const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
+    for (int32_t b = 0; b < bs_count; ++b) {
+        mi->set_blend_shape_value(b, idtx_mesh_get_blendshape_weight(mesh, b));
+    }
 }
 
 // A node always needs a non-empty name; an empty one makes Godot fall back to
@@ -307,7 +350,9 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
         case IDTX_NODE_MESH: {
             Ref<ArrayMesh> mesh = build_array_mesh(idtx_node_get_mesh(node));
             if (mesh->get_surface_count() > 0) mesh->surface_set_material(0, build_material(scene, node));
-            auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(mesh); n->set_transform(xform); return n;
+            auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(mesh);
+            apply_blend_shape_weights(n, idtx_node_get_mesh(node));
+            n->set_transform(xform); return n;
         }
         case IDTX_NODE_SKELETON: {
             auto* sk = memnew(UsdSkeletonNode3D);
@@ -391,6 +436,7 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     mesh->surface_set_material(0, build_material(scene, node));
                     auto* mi = memnew(UsdMeshInstanceNode3D);
                     mi->set_mesh(mesh);
+                    apply_blend_shape_weights(mi, sm);
                     mi->set_skeleton(sk);
                     mi->set_name("Skin");
                     sk->add_child(mi, true);

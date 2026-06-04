@@ -53,6 +53,21 @@ struct FTransform {
 // mirrors the Godot one), but with POD element types. idtx_scene.cpp flattens
 // these into the idtx_mesh_set_* C ABI at finalize. Bones are padded to 4/vertex
 // and weights normalized by the builder, exactly as the Godot builder does.
+// Morph target in the sparse "buffer-view" layout (SoA), mirroring USD's
+// pointIndices + offsets and glTF's sparse accessors: parallel arrays keyed by
+// output-vertex index. Now that geometry is indexed (1:1 with USD points), the
+// indices are real mesh-vertex indices; merge_mesh offsets them when it
+// collapses skin targets and finalize_mesh scatters them into the dense
+// per-vertex array idtx_mesh_add_blendshape expects.
+struct FBlendShape {
+    std::string          name;
+    float                weight = 0.0f;   // current/default weight (typically 0..1)
+    bool                 has_normals = false;
+    std::vector<int32_t> indices;         // output-vertex indices that move
+    std::vector<FVec3>   pos_offsets;     // parallel to indices
+    std::vector<FVec3>   nrm_offsets;     // parallel to indices (empty if no normals)
+};
+
 struct FMeshData {
     std::vector<FVec3>   Vertices;
     std::vector<int32_t> Triangles;
@@ -61,6 +76,7 @@ struct FMeshData {
     std::vector<FColor>  VertexColors;
     std::vector<int32_t> Bones;
     std::vector<float>   Weights;
+    std::vector<FBlendShape> BlendShapes;
 };
 
 // Skeletal animation, flattened from the converter's AnimationDescription. One

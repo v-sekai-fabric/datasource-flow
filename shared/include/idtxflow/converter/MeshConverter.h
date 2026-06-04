@@ -11,9 +11,11 @@
  * Skeletal Prims are handled separately in the UsdSkeletalMeshConverter, which extracts the skinning data and skeleton bindings.
  * The actual mesh data is extracted in this converter and can be used by the skeletal mesh converter to create the final skeletal mesh asset.
  */
+#include <algorithm>
 #include <array>
 #include <map>
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 #include <pxr/base/tf/token.h>
@@ -23,6 +25,9 @@
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/subset.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdSkel/animQuery.h>
+#include <pxr/usd/usdSkel/bindingAPI.h>
+#include <pxr/usd/usdSkel/blendShape.h>
 #include <pxr/usd/usdSkel/skeletonQuery.h>
 #include <pxr/usd/usdSkel/skinningQuery.h>
 
@@ -202,6 +207,92 @@ namespace converter
 		    joint_weights_element_size = skinningQuery.GetJointWeightsPrimvar().GetElementSize();
 
 		    boneNameToIndex = boneNameToIndexMap;
+
+		    // Blend shapes: read each UsdSkelBlendShape target, densify its sparse
+		    // offsets to one entry per USD point, and resolve its current weight from
+		    // the bound animation. BuildMesh maps these onto the indexed vertices.
+		    blend_shapes.clear();
+		    {
+		        pxr::UsdSkelBindingAPI bsBinding(skinningQuery.GetPrim());
+		        pxr::VtArray<pxr::TfToken> bsNames;
+		        pxr::SdfPathVector bsTargets;
+		        if (bsBinding.GetBlendShapesAttr().Get(&bsNames)
+		            && bsBinding.GetBlendShapeTargetsRel().GetTargets(&bsTargets))
+		        {
+		            pxr::VtArray<pxr::GfVec3f> pts;
+		            usdMesh.GetPointsAttr().Get(&pts);
+		            const size_t numPoints = pts.size();
+
+		            // Current weight per blend-shape name, from the skeleton's animation.
+		            std::map<std::string, float> weightByName;
+		            if (pxr::UsdSkelAnimQuery animQuery = skelQuery.GetAnimQuery())
+		            {
+		                pxr::VtArray<pxr::TfToken> animOrder = animQuery.GetBlendShapeOrder();
+		                pxr::VtArray<float> animWeights;
+		                animQuery.ComputeBlendShapeWeights(&animWeights);
+		                for (size_t i = 0; i < animOrder.size() && i < animWeights.size(); ++i)
+		                {
+		                    weightByName[animOrder[i].GetString()] = animWeights[i];
+		                }
+		            }
+
+		            pxr::UsdStagePtr stage = skinningQuery.GetPrim().GetStage();
+		            const size_t count = std::min(bsNames.size(), bsTargets.size());
+		            for (size_t b = 0; b < count; ++b)
+		            {
+		                pxr::UsdSkelBlendShape bs(stage->GetPrimAtPath(bsTargets[b]));
+		                if (!bs) continue;
+		                BlendShapeSrc src;
+		                src.name = bsNames[b].GetString();
+		                std::map<std::string, float>::const_iterator wit = weightByName.find(src.name);
+		                src.weight = (wit != weightByName.end()) ? wit->second : 0.0f;
+
+		                pxr::VtArray<pxr::GfVec3f> offsets;
+		                pxr::VtArray<int> pointIndices;
+		                pxr::VtArray<pxr::GfVec3f> normalOffsets;
+		                bs.GetOffsetsAttr().Get(&offsets);
+		                bs.GetPointIndicesAttr().Get(&pointIndices);
+		                bs.GetNormalOffsetsAttr().Get(&normalOffsets);
+		                src.has_normals = !normalOffsets.empty();
+		                src.pos.assign(numPoints, pxr::GfVec3f(0.0f));
+		                if (src.has_normals)
+		                {
+		                    src.nrm.assign(numPoints, pxr::GfVec3f(0.0f));
+		                }
+		                if (pointIndices.empty())
+		                {
+		                    for (size_t i = 0; i < offsets.size() && i < numPoints; ++i)
+		                    {
+		                        src.pos[i] = offsets[i];
+		                    }
+		                    if (src.has_normals)
+		                    {
+		                        for (size_t i = 0; i < normalOffsets.size() && i < numPoints; ++i)
+		                        {
+		                            src.nrm[i] = normalOffsets[i];
+		                        }
+		                    }
+		                }
+		                else
+		                {
+		                    for (size_t k = 0; k < pointIndices.size() && k < offsets.size(); ++k)
+		                    {
+		                        int pi = pointIndices[k];
+		                        if (pi >= 0 && static_cast<size_t>(pi) < numPoints) { src.pos[pi] = offsets[k]; }
+		                    }
+		                    if (src.has_normals)
+		                    {
+		                        for (size_t k = 0; k < pointIndices.size() && k < normalOffsets.size(); ++k)
+		                        {
+		                            int pi = pointIndices[k];
+		                            if (pi >= 0 && static_cast<size_t>(pi) < numPoints) { src.nrm[pi] = normalOffsets[k]; }
+		                        }
+		                    }
+		                }
+		                blend_shapes.push_back(std::move(src));
+		            }
+		        }
+		    }
 
 		    return Convert(usdMesh);
 		}
@@ -459,6 +550,39 @@ namespace converter
 				}
 			}
 
+			// Map each blend shape's per-point deltas onto the indexed engine
+			// vertices (source_points[v] is v's USD point). Sparse output: only
+			// vertices the shape actually moves. Compiled only for targets whose
+			// MeshData carries a blend-shape list (FlatTree); a no-op otherwise.
+			if constexpr (requires (MeshDataType m) { m.BlendShapes; })
+			{
+				for (const BlendShapeSrc& bs : blend_shapes)
+				{
+					typename std::decay<decltype(meshData.BlendShapes)>::type::value_type fbs;
+					fbs.name = bs.name;
+					fbs.weight = bs.weight;
+					fbs.has_normals = bs.has_normals;
+					for (size_t v = 0; v < source_points.size(); ++v)
+					{
+						const pxr::GfVec3f& d = bs.pos[source_points[v]];
+						bool moved = (d[0] != 0.0f || d[1] != 0.0f || d[2] != 0.0f);
+						if (bs.has_normals && !moved)
+						{
+							const pxr::GfVec3f& nd = bs.nrm[source_points[v]];
+							moved = (nd[0] != 0.0f || nd[1] != 0.0f || nd[2] != 0.0f);
+						}
+						if (!moved) { continue; }
+						fbs.indices.push_back(static_cast<int32_t>(v));
+						fbs.pos_offsets.push_back(TypeConverter::toVector3(d));
+						if (bs.has_normals)
+						{
+							fbs.nrm_offsets.push_back(TypeConverter::toVector3(bs.nrm[source_points[v]]));
+						}
+					}
+					if (!fbs.indices.empty()) { meshData.BlendShapes.push_back(std::move(fbs)); }
+				}
+			}
+
 			return meshData;
 		}
 
@@ -471,6 +595,18 @@ namespace converter
 		// Populated by BuildMesh so morph-target offsets (authored per USD point)
 		// map onto the indexed engine vertices without a separate scatter table.
 		std::vector<int32_t> source_points;
+		// Blend-shape (morph target) source data, read from the mesh's
+		// UsdSkelBlendShape targets and densified per USD point (zero where the
+		// shape leaves a point untouched). Weight comes from the bound animation.
+		// Populated by ConvertSkinnedMesh; consumed in BuildMesh via source_points.
+		struct BlendShapeSrc {
+			std::string               name;
+			float                     weight = 0.0f;
+			bool                      has_normals = false;
+			std::vector<pxr::GfVec3f> pos;   // size == points.size()
+			std::vector<pxr::GfVec3f> nrm;   // size == points.size() (if has_normals)
+		};
+		std::vector<BlendShapeSrc> blend_shapes;
 		// the points of the mesh, as defined in the usd prim
 		pxr::VtArray<class pxr::GfVec3f> points;
 		// the list of number of points that span the face at index

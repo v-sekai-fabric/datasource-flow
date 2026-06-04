@@ -92,6 +92,31 @@ inline void merge_mesh(idtx::core::scene::FMeshData& dst, const idtx::core::scen
     dst.Bones.insert(dst.Bones.end(), src.Bones.begin(), src.Bones.end());
     dst.Weights.insert(dst.Weights.end(), src.Weights.begin(), src.Weights.end());
     for (int32_t idx : src.Triangles) dst.Triangles.push_back(base + idx);
+
+    // Merge blend shapes by name: each src target's sparse deltas move into dst
+    // with vertex indices shifted by `base`, so same-named shapes across the
+    // collapsed skin targets accumulate into one set.
+    for (const idtx::core::scene::FBlendShape& sbs : src.BlendShapes) {
+        idtx::core::scene::FBlendShape* dbs = nullptr;
+        for (idtx::core::scene::FBlendShape& d : dst.BlendShapes) {
+            if (d.name == sbs.name) { dbs = &d; break; }
+        }
+        if (dbs == nullptr) {
+            idtx::core::scene::FBlendShape created;
+            created.name = sbs.name;
+            created.weight = sbs.weight;
+            dst.BlendShapes.push_back(std::move(created));
+            dbs = &dst.BlendShapes.back();
+        }
+        const bool with_normals = sbs.has_normals
+            && sbs.nrm_offsets.size() == sbs.indices.size();
+        for (size_t k = 0; k < sbs.indices.size(); ++k) {
+            dbs->indices.push_back(base + sbs.indices[k]);
+            dbs->pos_offsets.push_back(sbs.pos_offsets[k]);
+            if (with_normals) { dbs->nrm_offsets.push_back(sbs.nrm_offsets[k]); }
+        }
+        if (with_normals) { dbs->has_normals = true; }
+    }
 }
 
 }  // namespace flat_detail
