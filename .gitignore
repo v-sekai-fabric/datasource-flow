@@ -94,3 +94,6 @@ idtx-build.log
 /Miroir_Re_fromUnity_USD.tscn
 /Miroir_Re_Clothing_fromUnity.tscn
 /miroir_geo.json
+
+# Unity-deployed OpenUSD plugin tree (build artifact, see scons/idtxcore.py)
+unity/IdtxCore/Plugins/*/usd/

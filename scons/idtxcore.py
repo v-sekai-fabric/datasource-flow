@@ -310,6 +310,17 @@ def _build_idtx_core(env, shared=True, static=True):
             for c in companions:
                 if os.path.exists(c):
                     unity_targets.append(env.Install(unity_plugin_dir, c))
+            # OpenUSD's plugin registry (ar/ sdf/ usd/ ... + plugInfo.json). Without
+            # it on PXR_PLUGINPATH_NAME, creating a USD stage in the export aborts
+            # the whole editor. Copy it beside usd_ms so IdtxCoreLoader can point
+            # PXR_PLUGINPATH_NAME at Plugins/<arch>/usd.
+            usd_plugin_src = f"{usd_root}/lib/usd"
+            if os.path.isdir(usd_plugin_src):
+                dst_usd = os.path.join(unity_plugin_dir, "usd")
+                def _copy_usd_plugin_tree(target, source, env, _src=usd_plugin_src, _dst=dst_usd):
+                    import shutil
+                    shutil.copytree(_src, _dst, dirs_exist_ok=True)
+                env.AddPostAction(unity_targets[0], _copy_usd_plugin_tree)
             for t in unity_targets:
                 env.Default(t)
                 targets.append(t)

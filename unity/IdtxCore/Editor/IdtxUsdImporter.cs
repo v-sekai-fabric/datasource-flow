@@ -40,11 +40,20 @@ namespace IdtxCore.Editor
         {
             try
             {
+                // CRITICAL ORDER: register OpenUSD's plugin path BEFORE the first
+                // native call below loads usd_ms and initializes its PlugRegistry.
+                // If it's empty when a USD stage is later created (the export), the
+                // stage-create faults and takes the whole editor down. The core
+                // plugin tree (ar/ sdf/ usd/ + plugInfo.json) ships beside usd_ms
+                // at Plugins/<arch>/usd (deployed by scons/idtxcore.py).
+                string coreUsd = FindCoreUsdPluginDir();
+                if (!string.IsNullOrEmpty(coreUsd))
+                    PrependEnv(EnvVar, coreUsd);
                 string pkgSchema = FindPackageSchemaDir();
                 if (!string.IsNullOrEmpty(pkgSchema))
                     PrependEnv(EnvVar, pkgSchema);
 
-                // Log the version of libidtx_core we just bound.
+                // First native call — binds libidtx_core (+ usd_ms) with the path set.
                 string ver = IdtxAvatar.CoreVersion();
                 Debug.Log($"[IdtxCore] libidtx_core {ver} registered; PXR_PLUGINPATH_NAME = " +
                           Environment.GetEnvironmentVariable(EnvVar));
@@ -64,6 +73,21 @@ namespace IdtxCore.Editor
                 typeof(IdtxCoreLoader).Assembly);
             if (pkgInfo == null) return null;
             string candidate = Path.Combine(pkgInfo.resolvedPath, "Schema");
+            return Directory.Exists(candidate) ? candidate : null;
+        }
+
+        // The bundled OpenUSD core plugin tree, deployed beside usd_ms at
+        // Plugins/<arch>/usd (scons/idtxcore.py). OpenUSD needs it on
+        // PXR_PLUGINPATH_NAME to register Ar/Sdf/Usd before any stage op.
+        private static string FindCoreUsdPluginDir()
+        {
+            var pkgInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(
+                typeof(IdtxCoreLoader).Assembly);
+            string root = pkgInfo != null
+                ? pkgInfo.resolvedPath
+                : Path.GetDirectoryName(typeof(IdtxCoreLoader).Assembly.Location);
+            if (string.IsNullOrEmpty(root)) return null;
+            string candidate = Path.Combine(root, "Plugins", "x86_64", "usd");
             return Directory.Exists(candidate) ? candidate : null;
         }
 
