@@ -7,6 +7,7 @@
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 
 #include "idtx_core/idtx_scene.h"
 #include "idtx_core/idtx_core.h"
@@ -61,7 +62,15 @@ void UsdStageNode3D::open_and_convert_stage()
     // The stage is opened + converted entirely inside libidtx_core; we receive an
     // engine-neutral idtx_scene and build Godot nodes from it (no OpenUSD here).
     idtxflow::load_idtx_core();
-    idtx_scene_t* scene = idtx_core_import_scene_from_usd(stage_uri_.utf8().get_data());
+
+    // Resolve res://, user:// to a filesystem path host-side (the core opens a
+    // plain path; USD then resolves relative sub-references against it too). A
+    // full in-core ArResolver for absolute res:///http:// references is Phase 2.
+    String fs_uri = stage_uri_;
+    if (fs_uri.begins_with("res://") || fs_uri.begins_with("user://"))
+        fs_uri = ProjectSettings::get_singleton()->globalize_path(fs_uri);
+
+    idtx_scene_t* scene = idtx_core_import_scene_from_usd(fs_uri.utf8().get_data());
     is_loading_ = false;
 
     if (!scene) {
