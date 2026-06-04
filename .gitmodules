@@ -3,6 +3,3 @@
 	url = https://github.com/cgg-bern/lemon
 	branch = cgg
 	ignore = untracked
-[submodule "openusd-fabric"]
-	path = openusd-fabric
-	url = https://github.com/v-sekai-multiplayer-fabric/openusd-fabric.git
