@@ -69,7 +69,7 @@ namespace IdtxCore.Bridge
             {
                 var mesh = smr.sharedMesh;
                 if (mesh == null) continue;
-                Matrix4x4 bake = UnityToCanonical * worldToRoot * smr.transform.localToWorldMatrix;
+                Matrix4x4 bake = UnityToCanonical * worldToRoot * SkinnedGeomBind(smr);
                 AddMeshSurfaces(avatar.Handle, mesh, smr.gameObject.name, smr.sharedMaterials, materialCache,
                                 smr.bones, boneIndexInSkeleton, bake);
             }
@@ -123,6 +123,26 @@ namespace IdtxCore.Bridge
         private static float[] ConvertTransformToFloat16(Matrix4x4 m)
         {
             return MatrixToFloat16(UnityToCanonical * m * UnityToCanonical.inverse);
+        }
+
+        // Mesh-local -> skeleton bind-world transform (geomBindTransform) for a
+        // skinned mesh. Unity does NOT apply the SkinnedMeshRenderer's own
+        // transform to skinned vertices -- the bind mapping is encoded in the mesh
+        // bindposes relative to the bones. At bind pose, bone_i.localToWorld *
+        // bindpose_i is identical for every influencing bone i and equals that
+        // mapping, so any bone works. Using smr.transform instead leaves meshes
+        // whose bindposes differ from their renderer transform (e.g. ModularAvatar
+        // merged garments) translated off the body.
+        private static Matrix4x4 SkinnedGeomBind(SkinnedMeshRenderer smr)
+        {
+            var bindposes = smr.sharedMesh.bindposes;
+            var bones = smr.bones;
+            if (bindposes != null && bones != null && bindposes.Length > 0
+                && bones.Length > 0 && bones[0] != null)
+            {
+                return bones[0].localToWorldMatrix * bindposes[0];
+            }
+            return smr.transform.localToWorldMatrix;
         }
 
         private static SkeletonHandle BuildSkeleton(
