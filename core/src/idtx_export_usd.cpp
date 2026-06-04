@@ -321,6 +321,17 @@ static pxr::SdfPath emit_material(
         pxr::TfToken("surface"), pxr::SdfValueTypeNames->Token);
     usd_mat.CreateSurfaceOutput().ConnectToSource(surf_out);
 
+    // Double-sided: USD's own doubleSided is per-mesh (authored in emit_mesh for
+    // foreign tools), but engines key it per-material, so we also round-trip it
+    // on the material via the VSekaiMaterialAPI applied schema. read_material
+    // reads exactly this attribute.
+    if (idtx_material_get_double_sided(mat) != 0) {
+        pxr::UsdPrim prim = usd_mat.GetPrim();
+        prim.ApplyAPI(pxr::TfToken("VSekaiMaterialAPI"));
+        prim.CreateAttribute(pxr::TfToken("v_sekai:doubleSided"),
+                             pxr::SdfValueTypeNames->Bool).Set(true);
+    }
+
     // MToon overlay — apply VSekaiMToonAPI applied schema + write the
     // v_sekai:mtoon:* attributes for round-tripping.
     if (idtx_material_is_mtoon(mat)) {
@@ -796,6 +807,31 @@ static void author_avatar_tree(
                     auto binding = pxr::UsdShadeMaterialBindingAPI::Apply(mesh_prim);
                     binding.Bind(mat);
                 }
+            }
+
+            // USD's own doubleSided is per-mesh, so a mesh is double-sided if ANY
+            // material bound to it is. This is what foreign tools (Blender, Houdini)
+            // read; our per-material round-trip rides on v_sekai:doubleSided.
+            bool mesh_double_sided = false;
+            const int32_t ds_subset_count = idtx_mesh_get_subset_count(mesh_h);
+            if (ds_subset_count > 1) {
+                for (int32_t s = 0; s < ds_subset_count && !mesh_double_sided; ++s) {
+                    int32_t smat = -1, soff = 0, scnt = 0;
+                    idtx_mesh_get_subset(mesh_h, s, &smat, &soff, &scnt);
+                    if (smat >= 0 && smat < idtx_avatar_get_material_count(avatar)
+                        && idtx_material_get_double_sided(idtx_avatar_get_material(avatar, smat)) != 0) {
+                        mesh_double_sided = true;
+                    }
+                }
+            } else {
+                int32_t mat_index = idtx_avatar_get_mesh_material(avatar, i);
+                if (mat_index >= 0 && mat_index < idtx_avatar_get_material_count(avatar)
+                    && idtx_material_get_double_sided(idtx_avatar_get_material(avatar, mat_index)) != 0) {
+                    mesh_double_sided = true;
+                }
+            }
+            if (mesh_double_sided) {
+                pxr::UsdGeomMesh(mesh_prim).CreateDoubleSidedAttr().Set(true);
             }
 
             bind_mesh_to_skeleton(

@@ -74,8 +74,15 @@ inline int32_t material_of(idtx::core::scene::FlatScene* scene, const MD& md) {
     if (!md.usdMaterial) { return -1; }
     const std::string path = md.usdMaterial.GetPrim().GetPath().GetString();
     std::map<std::string, int32_t>::const_iterator it = scene->material_index_by_path.find(path);
-    if (it != scene->material_index_by_path.end()) { return it->second; }
-    scene->materials.push_back(idtx::core::detail::read_material(md.usdMaterial.GetPrim()));
+    if (it != scene->material_index_by_path.end()) {
+        // A material shared across meshes is double-sided if ANY user is; fold in
+        // this mesh's per-mesh doubleSided (covers foreign USD without our schema).
+        if (md.doubleSided) { idtx_material_set_double_sided(scene->materials[it->second], 1); }
+        return it->second;
+    }
+    idtx_material_t* m = idtx::core::detail::read_material(md.usdMaterial.GetPrim());
+    if (md.doubleSided) { idtx_material_set_double_sided(m, 1); }
+    scene->materials.push_back(m);
     const int32_t idx = static_cast<int32_t>(scene->materials.size()) - 1;
     scene->material_index_by_path[path] = idx;
     return idx;

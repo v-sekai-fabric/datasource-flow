@@ -628,9 +628,12 @@ namespace IdtxCore.Bridge
 
             var positions = new float[vc * 3];
             NativeMethods.idtx_mesh_get_positions(mh, positions);
+            // Canonical (RH, -Z forward) -> Unity (LH, +Z forward): negate Z.
+            // Same UnityToCanonical reflection the export applies, inverted (it is
+            // its own inverse). Winding is reversed below to match the flip.
             var verts = new Vector3[vc];
             for (int i = 0; i < vc; ++i)
-                verts[i] = new Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+                verts[i] = new Vector3(positions[i * 3], positions[i * 3 + 1], -positions[i * 3 + 2]);
 
             var mesh = new Mesh();
             mesh.name = NativeMethods.PtrToUtf8(NativeMethods.idtx_mesh_get_name(mh));
@@ -643,7 +646,7 @@ namespace IdtxCore.Bridge
                 NativeMethods.idtx_mesh_get_normals(mh, n);
                 var ns = new Vector3[vc];
                 for (int i = 0; i < vc; ++i)
-                    ns[i] = new Vector3(n[i * 3], n[i * 3 + 1], n[i * 3 + 2]);
+                    ns[i] = new Vector3(n[i * 3], n[i * 3 + 1], -n[i * 3 + 2]);  // negate Z (handedness)
                 mesh.normals = ns;
             }
             if (NativeMethods.idtx_mesh_has_uvs(mh) != 0)
@@ -667,6 +670,13 @@ namespace IdtxCore.Bridge
 
             var idx = new int[ic];
             NativeMethods.idtx_mesh_get_indices(mh, idx);
+            // Reverse triangle winding: the negate-Z reflection flips handedness,
+            // so swap the last two indices of every triangle to keep front faces
+            // front (canonical CCW -> Unity CW).
+            for (int t = 0; t + 2 < ic; t += 3)
+            {
+                (idx[t + 1], idx[t + 2]) = (idx[t + 2], idx[t + 1]);
+            }
             mesh.SetTriangles(idx, 0);
 
             int bpv = NativeMethods.idtx_mesh_get_bones_per_vertex(mh);
@@ -704,6 +714,11 @@ namespace IdtxCore.Bridge
             for (int row = 0; row < 4; ++row)
                 for (int col = 0; col < 4; ++col)
                     mat[row, col] = m[row * 4 + col];
+
+            // Rebase canonical (RH) -> Unity (LH) by the negate-Z reflection, the
+            // inverse of the export's UnityToCanonical (it is symmetric, so
+            // B*M*B is correct regardless of row/column-vector convention).
+            mat = UnityToCanonical * mat * UnityToCanonical;
 
             var pos = new Vector3(mat.m03, mat.m13, mat.m23);
             // Decompose: rotation from the orthogonalised basis,

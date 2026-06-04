@@ -147,6 +147,10 @@ Ref<StandardMaterial3D> build_material_index(idtx_scene_t* scene, idtx_node_t* n
                 }
             } break;
         }
+        // Double-sided -> disable back-face culling so both faces render.
+        if (idtx_material_get_double_sided(m) != 0) {
+            mat->set_cull_mode(BaseMaterial3D::CULL_DISABLED);
+        }
         return mat;
     }
 

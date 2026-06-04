@@ -38,6 +38,28 @@ over "GLOBAL" (
 {
 }
 
+class "VSekaiMaterialAPI" (
+    inherits = </APISchemaBase>
+    customData = {
+        token apiSchemaType = "singleApply"
+        bool skipCodeGeneration = true
+    }
+    doc = """API schema carrying material-level render state that USD models
+    per-mesh but real-time engines key per-material.
+
+    USD's UsdGeomGprim.doubleSided is a geometry attribute, so a material
+    shared across a single-sided and a double-sided mesh cannot record both
+    states. Godot (cull_mode), glTF (doubleSided), and Unity/MToon all key
+    double-sidedness on the material, so idtx-flow round-trips it here.
+    The C++ exporter also mirrors the resolved value onto each mesh's
+    UsdGeomMesh.doubleSided for DCC tools that only read the geometry form."""
+)
+{
+    bool v_sekai:doubleSided = false (
+        doc = "Render both faces (disable back-face culling) for this material."
+    )
+}
+
 class "VSekaiMToonAPI" (
     inherits = </APISchemaBase>
     customData = {

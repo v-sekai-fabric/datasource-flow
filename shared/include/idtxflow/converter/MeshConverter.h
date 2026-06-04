@@ -43,6 +43,9 @@ namespace converter
 	{
 		MeshDataType meshData;
 		pxr::UsdShadeMaterial usdMaterial;
+		// USD authors doubleSided per-mesh (UsdGeomGprim); engines key it
+		// per-material, so the caller propagates this onto the bound material.
+		bool doubleSided = false;
 	};
 	
 	template<typename TargetEngine> requires idtxflow::types::ValidTargetEngine<TargetEngine>
@@ -113,6 +116,12 @@ namespace converter
 				}
 			}
 
+			// doubleSided is a per-mesh (UsdGeomGprim) attribute; capture it once
+			// here and stamp it on every MeshDescription so the caller can fold it
+			// into the per-material flag the engines actually use.
+			bool meshDoubleSided = false;
+			usdMesh.GetDoubleSidedAttr().Get(&meshDoubleSided);
+
 			// once we have extracted all relevant data from the UsdGeomMeshPrim we can run the conversion into the
 			// target engine format
 			std::vector<MeshDescription<MeshDataType>> engineMesh;
@@ -152,6 +161,7 @@ namespace converter
 				// let the caller do the convertion and further processing of the material and just
 				// provide the material reference
 				subsetData.usdMaterial = GetUsdMaterial(subset);
+				subsetData.doubleSided = meshDoubleSided;
 
 				// push the subset mesh to the mesh data list. It's up to the engine to process the different meshes and create
 				// the respective data in the engine format
@@ -183,6 +193,7 @@ namespace converter
 				// let the caller do the convertion and further processing of the material and just
 				// provide the material reference
 				meshData.usdMaterial = GetUsdMaterial(usdMesh);
+				meshData.doubleSided = meshDoubleSided;
 
 				// push the mesh data to the list. It's up to the engine to process the different meshes and create
 				// the respective data in the engine format

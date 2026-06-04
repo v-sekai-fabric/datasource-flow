@@ -275,6 +275,12 @@ IDTX_CORE_API idtx_alpha_mode_t idtx_material_get_alpha_mode(const idtx_material
 IDTX_CORE_API void idtx_material_set_alpha_cutoff(idtx_material_t* mat, float cutoff);
 IDTX_CORE_API float idtx_material_get_alpha_cutoff(const idtx_material_t* mat);
 
+// Double-sided (no back-face culling). USD authors doubleSided per-mesh (UsdGeomGprim);
+// engines (Godot cull_mode, glTF, MToon) key it per-material, so idtx carries it on the
+// material. 0 = cull back faces (default), non-zero = render both sides.
+IDTX_CORE_API void idtx_material_set_double_sided(idtx_material_t* mat, int double_sided);
+IDTX_CORE_API int  idtx_material_get_double_sided(const idtx_material_t* mat);
+
 // Texture references — string paths. Empty / NULL means unset.
 IDTX_CORE_API void        idtx_material_set_base_color_texture(idtx_material_t* mat, const char* path);
 IDTX_CORE_API const char* idtx_material_get_base_color_texture(const idtx_material_t* mat);

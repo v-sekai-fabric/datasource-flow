@@ -131,6 +131,17 @@ idtx_material_t* read_material(pxr::UsdPrim const& prim)
         }
     }
 
+    // Double-sided: USD authors `doubleSided` per-mesh, but engines key it
+    // per-material, so we carry it on the material via the VSekaiMaterialAPI
+    // schema attribute `v_sekai:doubleSided` (our round-trip form). Foreign
+    // USD without the schema is handled at mesh-read time (see ConvertMesh).
+    if (auto a = prim.GetAttribute(pxr::TfToken("v_sekai:doubleSided"))) {
+        bool ds = false;
+        if (a.Get(&ds) && ds) {
+            idtx_material_set_double_sided(out, 1);
+        }
+    }
+
     // MToon overlay if VSekaiMToonAPI is applied on the material prim.
     if (prim.HasAPI(pxr::TfToken("VSekaiMToonAPI"))) {
         pxr::GfVec3f shade(0.5f, 0.5f, 0.5f);

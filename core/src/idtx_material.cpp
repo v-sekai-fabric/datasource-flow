@@ -15,6 +15,7 @@ struct idtx_material
     float roughness  = 0.5f;
     idtx_alpha_mode_t alpha_mode = IDTX_ALPHA_OPAQUE;
     float alpha_cutoff = 0.5f;
+    bool double_sided = false;
     std::string base_color_texture;
     std::string normal_texture;
 
@@ -81,6 +82,12 @@ extern "C" IDTX_CORE_API void idtx_material_set_alpha_cutoff(idtx_material_t* ma
 
 extern "C" IDTX_CORE_API float idtx_material_get_alpha_cutoff(const idtx_material_t* mat)
 { return (mat != nullptr) ? mat->alpha_cutoff : 0.5f; }
+
+extern "C" IDTX_CORE_API void idtx_material_set_double_sided(idtx_material_t* mat, int double_sided)
+{ if (mat != nullptr) mat->double_sided = (double_sided != 0); }
+
+extern "C" IDTX_CORE_API int idtx_material_get_double_sided(const idtx_material_t* mat)
+{ return (mat != nullptr && mat->double_sided) ? 1 : 0; }
 
 extern "C" IDTX_CORE_API void idtx_material_set_base_color_texture(idtx_material_t* mat, const char* path)
 { if (mat != nullptr) mat->base_color_texture = (path != nullptr) ? path : ""; }
