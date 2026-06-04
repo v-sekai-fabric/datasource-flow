@@ -44,11 +44,27 @@ Transform3D to_transform(const float m[16]) {
     return Transform3D(basis, Vector3(m[12], m[13], m[14]));
 }
 
-// Godot forbids '/' and ':' in bone names (USD joint paths use them). Both the
-// skeleton bones and the animation track targets are sanitized the same way so
-// the joint->bone map keys line up.
+// The stable JOIN KEY for a joint: its full USD path with '/' and ':' (both
+// forbidden in Godot bone names / NodePaths) flattened to '_'. USD joint paths
+// are unique, so this disambiguates the animation track -> bone-index map even
+// when leaf names collide. Used for the joint->bone map keys and the matching
+// animation track paths (NOT for the visible bone name — see leaf_bone_name).
 String sanitize_bone(const char* usd_name) {
     return String(usd_name).replace("/", "_").replace(":", "_");
+}
+
+// The DISPLAY name for a bone: just the leaf joint (last path component). USD
+// joint names are full ancestor chains ("root/hips/spine/..."); the Skeleton3D
+// hierarchy already encodes parenting via bone parents, so flattening the whole
+// path into the name is redundant and unreadable. ':' is still stripped (Godot
+// forbids it in bone names). Uniqueness is enforced at the add_bone call site.
+String leaf_bone_name(const char* usd_name) {
+    String s = String(usd_name);
+    const int slash = s.rfind("/");
+    if (slash >= 0) {
+        s = s.substr(slash + 1);
+    }
+    return s.replace(":", "_");
 }
 
 // Build the Godot material for a node — the single material path for the whole
@@ -240,12 +256,27 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                 // bone index; UsdSkeletonNode3D::_process uses it to drive poses.
                 Dictionary joint_bone_map;
                 for (int32_t b = 0; b < bc; ++b) {
-                    String bone_name = sanitize_bone(idtx_skeleton_get_bone_name(skel, b));
-                    int32_t bi = sk->add_bone(bone_name);
+                    const char* raw = idtx_skeleton_get_bone_name(skel, b);
+                    // Visible name = leaf joint. add_bone rejects duplicates (and
+                    // returns -1, which would desync bone indices from the skinning
+                    // data), so probe with numeric suffixes until one is accepted.
+                    String display = leaf_bone_name(raw);
+                    if (display.is_empty()) {
+                        display = String("bone");
+                    }
+                    int32_t bi = sk->add_bone(display);
+                    for (int32_t suffix = 2; bi < 0 && suffix < bc + 3; ++suffix) {
+                        bi = sk->add_bone(display + "_" + String::num_int64(suffix));
+                    }
+                    if (bi < 0) {
+                        bi = sk->add_bone(String("bone_") + String::num_int64(b));
+                    }
                     sk->set_bone_parent(bi, idtx_skeleton_get_bone_parent(skel, b));
                     float rest[16]; idtx_skeleton_get_bone_rest(skel, b, rest);
                     sk->set_bone_rest(bi, to_transform(rest));
-                    joint_bone_map[NodePath(bone_name)] = bi;
+                    // Join key stays the full unique joint path so animation tracks
+                    // resolve unambiguously even when leaf display names collide.
+                    joint_bone_map[NodePath(sanitize_bone(raw))] = bi;
                 }
                 sk->reset_bone_poses();
                 sk->set_joint_to_bone_map(joint_bone_map);
