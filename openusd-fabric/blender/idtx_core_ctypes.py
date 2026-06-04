@@ -75,9 +75,16 @@ def _add_dependency_dirs(dll_path: Path, repo_root: Path) -> None:
         repo_root / "usd" / "libs" / "windows",
     ]
     if sys.platform == "win32":
-        for d in dep_dirs:
-            if d.exists():
-                os.add_dll_directory(str(d))
+        # os.add_dll_directory is 3.8+. Some hosts ship Python 3.7 (e.g. Unreal
+        # 4.27 reuses this binding); fall back to prepending the dep dirs to
+        # PATH (the legacy DLL search order honours PATH for dependents).
+        if hasattr(os, "add_dll_directory"):
+            for d in dep_dirs:
+                if d.exists():
+                    os.add_dll_directory(str(d))
+        else:
+            parts = [str(d) for d in dep_dirs if d.exists()]
+            os.environ["PATH"] = os.pathsep.join(parts + [os.environ.get("PATH", "")])
     else:
         # POSIX: prepend to (DY)LD_LIBRARY_PATH for child relinks; the loader
         # also honours the lib's own rpath ($ORIGIN) for siblings.

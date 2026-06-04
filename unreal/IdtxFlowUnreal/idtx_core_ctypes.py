@@ -70,9 +70,16 @@ def _add_dependency_dirs(dll_path: Path, repo_root: Path) -> None:
         repo_root / "usd" / "libs" / "windows",
     ]
     if sys.platform == "win32":
-        for d in dep_dirs:
-            if d.exists():
-                os.add_dll_directory(str(d))
+        # os.add_dll_directory is 3.8+. Unreal 4.27 ships Python 3.7, so fall
+        # back to prepending the dep dirs to PATH (the legacy DLL search order
+        # honours PATH for a loaded module's dependents).
+        if hasattr(os, "add_dll_directory"):
+            for d in dep_dirs:
+                if d.exists():
+                    os.add_dll_directory(str(d))
+        else:
+            parts = [str(d) for d in dep_dirs if d.exists()]
+            os.environ["PATH"] = os.pathsep.join(parts + [os.environ.get("PATH", "")])
     else:
         key = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
         existing = os.environ.get(key, "")
