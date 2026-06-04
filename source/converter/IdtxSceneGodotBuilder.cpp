@@ -250,6 +250,7 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     // adds each weighted delta independently (matches Unity/glTF morph semantics).
     // Deltas are already in the canonical (== Godot) frame, so no rebasing here.
     TypedArray<Array> blend_arrays;
+    float max_bs_delta = 0.0f;  // largest morph offset, to size the custom AABB
     const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
     if (bs_count > 0) {
         out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_RELATIVE);
@@ -263,6 +264,9 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
             PackedVector3Array bverts; bverts.resize(vc);
             for (int32_t i = 0; i < vc; ++i) {
                 bverts[i] = Vector3(dp[i*3], dp[i*3+1], dp[i*3+2]);
+                max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3]));
+                max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3+1]));
+                max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3+2]));
             }
             Array bs_arr; bs_arr.resize(Mesh::ARRAY_MAX);
             bs_arr[Mesh::ARRAY_VERTEX] = bverts;
@@ -279,6 +283,18 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     }
 
     out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, blend_arrays, Dictionary(), flags);
+
+    // Godot's auto AABB for a RELATIVE-mode morph mesh treats each blend-shape
+    // DELTA array (offsets near the origin) as positions, so the box wrongly
+    // spans from the base geometry to the origin (huge for an off-origin avatar,
+    // breaking editor framing/gizmos). Set the correct AABB ourselves: the base
+    // vertices grown by the largest morph offset.
+    if (verts.size() > 0) {
+        AABB box(verts[0], Vector3());
+        for (int32_t i = 1; i < verts.size(); ++i) box.expand_to(verts[i]);
+        box = box.grow(max_bs_delta);
+        out->set_custom_aabb(box);
+    }
     return out;
 }
 
