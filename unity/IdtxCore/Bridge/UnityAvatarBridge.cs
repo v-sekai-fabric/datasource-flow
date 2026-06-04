@@ -26,7 +26,14 @@ namespace IdtxCore.Bridge
             if (root == null) return null;
 
             var avatar = new IdtxAvatar { Name = root.name };
-            avatar.SetRootTransform(MatrixToFloat16(root.transform.localToWorldMatrix));
+            avatar.SetRootTransform(ConvertTransformToFloat16(root.transform.localToWorldMatrix));
+
+            // Everything is authored in the avatar root's local space (so the
+            // root Xform above positions the whole avatar) and rebased into the
+            // canonical frame. worldToRoot maps any Unity world transform/point
+            // into that common space; geometry is baked through it so meshes and
+            // skeleton share one frame (the geomBindTransform link, baked in).
+            Matrix4x4 worldToRoot = root.transform.worldToLocalMatrix;
 
             // Skeleton: use the first SkinnedMeshRenderer's bones as the
             // canonical bone list. Multi-skeleton avatars are reduced to
@@ -38,7 +45,7 @@ namespace IdtxCore.Bridge
             {
                 skeletonBones = firstSmr.bones;
                 boneIndexInSkeleton = new int[skeletonBones.Length];
-                var skel = BuildSkeleton(skeletonBones, firstSmr.rootBone, boneIndexInSkeleton);
+                var skel = BuildSkeleton(skeletonBones, firstSmr.rootBone, worldToRoot, boneIndexInSkeleton);
                 NativeMethods.idtx_avatar_set_skeleton(avatar.Handle, skel);
             }
 
@@ -53,7 +60,8 @@ namespace IdtxCore.Bridge
                 var mesh = mf.sharedMesh;
                 if (mesh == null) continue;
                 var mr = mf.GetComponent<MeshRenderer>();
-                AddMeshSurfaces(avatar.Handle, mesh, mf.gameObject.name, mr?.sharedMaterials, materialCache, null, null);
+                Matrix4x4 bake = UnityToCanonical * worldToRoot * mf.transform.localToWorldMatrix;
+                AddMeshSurfaces(avatar.Handle, mesh, mf.gameObject.name, mr?.sharedMaterials, materialCache, null, null, bake);
             }
 
             // Skinned meshes (SkinnedMeshRenderer)
@@ -61,8 +69,9 @@ namespace IdtxCore.Bridge
             {
                 var mesh = smr.sharedMesh;
                 if (mesh == null) continue;
+                Matrix4x4 bake = UnityToCanonical * worldToRoot * smr.transform.localToWorldMatrix;
                 AddMeshSurfaces(avatar.Handle, mesh, smr.gameObject.name, smr.sharedMaterials, materialCache,
-                                smr.bones, boneIndexInSkeleton);
+                                smr.bones, boneIndexInSkeleton, bake);
             }
 
             return avatar;
@@ -80,9 +89,9 @@ namespace IdtxCore.Bridge
             // Unity's Matrix4x4 is column-vector (translation in column 3, i.e.
             // m[0,3]/m[1,3]/m[2,3]). The idtx C ABI is USD's row-vector layout:
             // translation in row 3, bytes 12..14 (see FlatTreeTypeConverter). The
-            // boundary pins ONE canonical convention, so each host adapter converts
-            // to it exactly once -- transpose here, or translations land in the
-            // wrong half and read back as zero (every bone collapses to the origin).
+            // boundary pins ONE convention, so each host adapter converts to it
+            // exactly once -- transpose here, or translations land in the wrong
+            // half and read back as zero (every bone collapses to the origin).
             var o = new float[16];
             for (int row = 0; row < 4; ++row)
             {
@@ -94,9 +103,32 @@ namespace IdtxCore.Bridge
             return o;
         }
 
+        // Change of basis from Unity's frame to the canonical idtx/USD frame.
+        // Unity is LEFT-handed (+X right, +Y up, +Z forward); the canonical frame
+        // is RIGHT-handed (+X right, +Y up, -Z forward). The COLUMNS are the
+        // images of Unity's basis vectors in the canonical frame:
+        //   Unity +X -> +X,   Unity +Y -> +Y,   Unity +Z -> -Z.
+        // The two frames differ in handedness, so this is a reflection
+        // (determinant -1) -- intrinsic to a left- to right-handed conversion, not
+        // an arbitrary scale. Transforms are rebased by similarity (B * M * B^-1),
+        // positions/normals directly (B * p), and winding is reversed to match.
+        private static readonly Matrix4x4 UnityToCanonical = new Matrix4x4(
+            new Vector4(1f, 0f, 0f, 0f),
+            new Vector4(0f, 1f, 0f, 0f),
+            new Vector4(0f, 0f, -1f, 0f),
+            new Vector4(0f, 0f, 0f, 1f));
+
+        // Rebase a Unity transform into the canonical frame by similarity and pack
+        // it into the row-major float[16] the C ABI expects.
+        private static float[] ConvertTransformToFloat16(Matrix4x4 m)
+        {
+            return MatrixToFloat16(UnityToCanonical * m * UnityToCanonical.inverse);
+        }
+
         private static SkeletonHandle BuildSkeleton(
             Transform[] bones,
             Transform rootBone,
+            Matrix4x4 worldToRoot,
             int[] outBoneIndexInSkeleton)
         {
             var skel = NativeMethods.idtx_skeleton_create();
@@ -110,7 +142,36 @@ namespace IdtxCore.Bridge
                     transformToIdx[bones[i]] = i;
             }
 
-            for (int i = 0; i < bones.Length; ++i)
+            // Pass 1: the canonical, avatar-root-relative BIND transform of each
+            // bone, plus its parent index. bind = the bone's world pose mapped into
+            // the avatar-root frame (so it matches the space geometry is baked into)
+            // and rebased by similarity into the canonical frame. The current pose
+            // is the bind pose for an un-posed avatar (bindposes[i] ==
+            // inverse(boneToWorld)).
+            int n = bones.Length;
+            var canonicalBind = new Matrix4x4[n];
+            var parentIdx = new int[n];
+            for (int i = 0; i < n; ++i)
+            {
+                var t = bones[i];
+                if (t == null)
+                {
+                    canonicalBind[i] = Matrix4x4.identity;
+                    parentIdx[i] = -1;
+                    continue;
+                }
+                parentIdx[i] = (t.parent != null && transformToIdx.TryGetValue(t.parent, out int p)) ? p : -1;
+                canonicalBind[i] = UnityToCanonical * (worldToRoot * t.localToWorldMatrix) * UnityToCanonical.inverse;
+            }
+
+            // Pass 2: rest (joint-local) is DERIVED FROM the bind hierarchy
+            // (parentBind^-1 * selfBind), not from Unity's local TRS. This
+            // guarantees the rest pose composes back to exactly the bind pose, so
+            // UsdSkel leaves the mesh undeformed at rest -- if rest != bind the
+            // whole mesh shears. Pure matrix math; no quaternion round-trip. rest
+            // and bind are already canonical, so MatrixToFloat16 only re-lays them
+            // out (no second rebasing).
+            for (int i = 0; i < n; ++i)
             {
                 var t = bones[i];
                 if (t == null)
@@ -120,24 +181,13 @@ namespace IdtxCore.Bridge
                     outBoneIndexInSkeleton[i] = i;
                     continue;
                 }
-
-                // Parent index = index of t.parent in the bones array,
-                // or -1 if the parent is the skeleton root / outside.
-                int parent = -1;
-                if (t.parent != null && transformToIdx.TryGetValue(t.parent, out int p))
-                    parent = p;
-
-                // rest = local transform; bind = world transform (the
-                // bone's pose when it was bound, which Unity's
-                // SkinnedMeshRenderer captures via bindposes — but
-                // bindposes[i] is inverse(boneToWorld), so the bind
-                // matrix proper is boneToWorld = t.localToWorldMatrix.
+                int parent = parentIdx[i];
+                Matrix4x4 rest = parent >= 0
+                    ? canonicalBind[parent].inverse * canonicalBind[i]
+                    : canonicalBind[i];
                 int added = NativeMethods.idtx_skeleton_add_bone(
-                    skel,
-                    t.name,
-                    parent,
-                    MatrixToFloat16(Matrix4x4.TRS(t.localPosition, t.localRotation, t.localScale)),
-                    MatrixToFloat16(t.localToWorldMatrix));
+                    skel, t.name, parent,
+                    MatrixToFloat16(rest), MatrixToFloat16(canonicalBind[i]));
                 outBoneIndexInSkeleton[i] = added;
             }
             return skel;
@@ -238,12 +288,16 @@ namespace IdtxCore.Bridge
             Material[] perSubmeshMaterials,
             Dictionary<Material, int> materialCache,
             Transform[] smrBones,
-            int[] boneIndexInSkeleton)
+            int[] boneIndexInSkeleton,
+            Matrix4x4 bake)
         {
             int subCount = mesh.subMeshCount;
-            var positions = MeshToFloat3Array(mesh.vertices);
+            // Bake mesh-local positions/normals into the canonical avatar-root
+            // frame (bake already folds in renderer.localToWorld, worldToRoot,
+            // and the Unity->USD basis), so geometry sits on the skeleton.
+            var positions = PointsToFloat3(mesh.vertices, bake);
             var normals = mesh.normals != null && mesh.normals.Length == mesh.vertexCount
-                          ? MeshToFloat3Array(mesh.normals)
+                          ? NormalsToFloat3(mesh.normals, bake)
                           : null;
             var uvs = mesh.uv != null && mesh.uv.Length == mesh.vertexCount
                       ? MeshToFloat2Array(mesh.uv)
@@ -280,6 +334,16 @@ namespace IdtxCore.Bridge
                 var indices = mesh.GetIndices(s);
                 if (indices == null || indices.Length == 0) continue;
 
+                // The negate-Z basis change flips handedness, so triangle winding
+                // must be reversed to keep front faces front-facing. Swap the last
+                // two indices of every triangle.
+                for (int i = 0; i + 2 < indices.Length; i += 3)
+                {
+                    int tmp = indices[i + 1];
+                    indices[i + 1] = indices[i + 2];
+                    indices[i + 2] = tmp;
+                }
+
                 var mh = NativeMethods.idtx_mesh_create();
                 NativeMethods.idtx_mesh_set_name(mh, $"{baseName}_{s}");
                 NativeMethods.idtx_mesh_set_vertices(
@@ -303,14 +367,31 @@ namespace IdtxCore.Bridge
             return indexInSkeleton[boneIndex];
         }
 
-        private static float[] MeshToFloat3Array(Vector3[] vs)
+        // Bake positions through `m` (point transform: rotation+scale+translation).
+        private static float[] PointsToFloat3(Vector3[] vs, Matrix4x4 m)
         {
             var o = new float[vs.Length * 3];
             for (int i = 0; i < vs.Length; ++i)
             {
-                o[i * 3 + 0] = vs[i].x;
-                o[i * 3 + 1] = vs[i].y;
-                o[i * 3 + 2] = vs[i].z;
+                Vector3 p = m.MultiplyPoint3x4(vs[i]);
+                o[i * 3 + 0] = p.x;
+                o[i * 3 + 1] = p.y;
+                o[i * 3 + 2] = p.z;
+            }
+            return o;
+        }
+
+        // Bake normals through `m` (direction only: rotation+scale, no translation),
+        // renormalized. Adequate for the rigid/uniform-scale transforms avatars use.
+        private static float[] NormalsToFloat3(Vector3[] ns, Matrix4x4 m)
+        {
+            var o = new float[ns.Length * 3];
+            for (int i = 0; i < ns.Length; ++i)
+            {
+                Vector3 n = m.MultiplyVector(ns[i]).normalized;
+                o[i * 3 + 0] = n.x;
+                o[i * 3 + 1] = n.y;
+                o[i * 3 + 2] = n.z;
             }
             return o;
         }
