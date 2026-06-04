@@ -77,10 +77,20 @@ namespace IdtxCore.Bridge
         // so transposing here lines up with idtx's row-major convention.
         private static float[] MatrixToFloat16(Matrix4x4 m)
         {
+            // Unity's Matrix4x4 is column-vector (translation in column 3, i.e.
+            // m[0,3]/m[1,3]/m[2,3]). The idtx C ABI is USD's row-vector layout:
+            // translation in row 3, bytes 12..14 (see FlatTreeTypeConverter). The
+            // boundary pins ONE canonical convention, so each host adapter converts
+            // to it exactly once -- transpose here, or translations land in the
+            // wrong half and read back as zero (every bone collapses to the origin).
             var o = new float[16];
             for (int row = 0; row < 4; ++row)
+            {
                 for (int col = 0; col < 4; ++col)
-                    o[row * 4 + col] = m[row, col];
+                {
+                    o[row * 4 + col] = m[col, row];
+                }
+            }
             return o;
         }
 
