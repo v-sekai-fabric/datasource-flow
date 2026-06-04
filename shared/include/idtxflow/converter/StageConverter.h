@@ -142,6 +142,12 @@ namespace converter
         {
             Stage = stage;
             StageUpAxis = pxr::UsdGeomGetStageUpAxis(stage);
+            // Pin the up-axis change of basis so every toVector3 / toTransform call
+            // below rebases into the engine's Y-up frame -- mesh verts, normals,
+            // blend-shape deltas, node transforms and skeleton rest/bind all
+            // converted consistently. (A root rotation alone leaves the skin bind
+            // poses in the stage frame and tears mesh and skeleton apart.)
+            TypeConverter::set_up_axis_basis(StageUpAxis);
             StageMetersPerUnit = pxr::UsdGeomGetStageMetersPerUnit(stage);
             if (StageMetersPerUnit == 0.0) StageMetersPerUnit = 0.01;
             StageTimecodesPerSec = stage->GetTimeCodesPerSecond();

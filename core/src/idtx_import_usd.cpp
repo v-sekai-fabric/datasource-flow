@@ -6,6 +6,7 @@
 // powers the future Unity import path.
 
 #include "idtx_core/idtx_core.h"
+#include "idtx_core/idtx_scene.h"
 #include "idtx_core/internal/usd_helpers.h"
 #include "usd_internal.h"
 
@@ -55,293 +56,6 @@ static pxr::UsdPrim pick_avatar_root(pxr::UsdStageRefPtr const& stage)
     return pxr::UsdPrim();
 }
 
-// Find the UsdSkelSkeleton bound by the meshes inside `root`.
-// Per UsdSkel conventions, every skinned UsdGeomMesh carries a
-// `skel:skeleton` relationship to the authoritative Skeleton. The
-// VRM skeleton is whichever Skeleton the majority of meshes
-// reference — using the binding (not just the first Skeleton spec
-// found in the tree) is well-specified by the UsdSkel docs:
-// https://openusd.org/dev/api/_usd_skel__schemas.html#UsdSkel_Skeleton
-// Falls back to "first Skeleton under `root`" only when no mesh
-// declares a binding (degenerate test fixtures).
-static pxr::UsdPrim find_first_skeleton_prim(pxr::UsdPrim const& root)
-{
-    if (!root.IsValid()) return pxr::UsdPrim();
-    std::unordered_map<std::string, int> binding_counts;
-    for (auto const& p : pxr::UsdPrimRange(root)) {
-        if (!p.IsA<pxr::UsdGeomMesh>()) continue;
-        pxr::UsdRelationship rel = p.GetRelationship(pxr::TfToken("skel:skeleton"));
-        if (!rel) continue;
-        pxr::SdfPathVector targets;
-        rel.GetTargets(&targets);
-        for (auto const& t : targets) binding_counts[t.GetString()] += 1;
-    }
-    if (!binding_counts.empty()) {
-        std::string winner;
-        int winner_n = -1;
-        for (auto const& kv : binding_counts) {
-            if (kv.second > winner_n) { winner = kv.first; winner_n = kv.second; }
-        }
-        pxr::UsdPrim sk = root.GetStage()->GetPrimAtPath(pxr::SdfPath(winner));
-        if (sk.IsValid() && sk.IsA<pxr::UsdSkelSkeleton>()) return sk;
-    }
-    // Fallback: first Skeleton in tree order (fixtures with no binding).
-    for (auto const& p : pxr::UsdPrimRange(root)) {
-        if (p.IsA<pxr::UsdSkelSkeleton>()) return p;
-    }
-    return pxr::UsdPrim();
-}
-
-// Build idtx_skeleton_t from a UsdSkelSkeleton prim. Returns NULL if
-// the skeleton has no joints or required attrs are missing.
-static idtx_skeleton_t* read_skeleton(pxr::UsdPrim const& skel_prim)
-{
-    if (!skel_prim.IsValid()) return nullptr;
-    pxr::UsdSkelSkeleton usd_skel(skel_prim);
-
-    pxr::VtArray<pxr::TfToken>    joints;
-    pxr::VtArray<pxr::GfMatrix4d> rest_transforms;
-    pxr::VtArray<pxr::GfMatrix4d> bind_transforms;
-
-    auto joints_attr = usd_skel.GetJointsAttr();
-    if (!joints_attr || !joints_attr.Get(&joints) || joints.empty()) return nullptr;
-    usd_skel.GetRestTransformsAttr().Get(&rest_transforms);
-    usd_skel.GetBindTransformsAttr().Get(&bind_transforms);
-
-    idtx_skeleton_t* skel = idtx_skeleton_create();
-    // Recover the idtx_skeleton's name from the parent SkelRoot
-    // (idtx_export_usd emits "<skel_name>_SkelRoot" for the parent).
-    // Falling back to the Skeleton prim's own name when the suffix
-    // pattern doesn't match keeps imports of non-idtx USD files
-    // (Blender / Houdini / Maya exports) working.
-    std::string skel_name = skel_prim.GetName().GetString();
-    pxr::UsdPrim skel_parent = skel_prim.GetParent();
-    if (skel_parent && skel_parent.IsValid()) {
-        std::string parent_name = skel_parent.GetName().GetString();
-        const std::string suffix = "_SkelRoot";
-        if (parent_name.size() > suffix.size()
-            && parent_name.compare(parent_name.size() - suffix.size(), suffix.size(), suffix) == 0) {
-            skel_name = parent_name.substr(0, parent_name.size() - suffix.size());
-        }
-    }
-    idtx_skeleton_set_name(skel, skel_name.c_str());
-
-    // joint paths are "a/b/c"; parent of joint i is the joint whose
-    // path is i's path minus the trailing /name. Build a map of
-    // path -> index as we go.
-    std::vector<std::string> joint_paths;
-    joint_paths.reserve(joints.size());
-    for (auto const& jt : joints) joint_paths.push_back(jt.GetString());
-
-    auto find_parent = [&](std::string const& jp) -> int32_t {
-        size_t slash = jp.find_last_of('/');
-        if (slash == std::string::npos) return -1;
-        std::string parent_path = jp.substr(0, slash);
-        for (size_t k = 0; k < joint_paths.size(); ++k) {
-            if (joint_paths[k] == parent_path) return static_cast<int32_t>(k);
-        }
-        return -1;
-    };
-
-    for (size_t i = 0; i < joints.size(); ++i) {
-        std::string const& jp = joint_paths[i];
-        size_t slash = jp.find_last_of('/');
-        std::string bone_name = (slash == std::string::npos) ? jp : jp.substr(slash + 1);
-
-        float rest[16];
-        float bind[16];
-        if (i < rest_transforms.size()) {
-            idtx::core::gf_matrix_to_float16(rest_transforms[i], rest);
-        } else {
-            for (int k = 0; k < 16; ++k) rest[k] = (k % 5 == 0) ? 1.0f : 0.0f;
-        }
-        if (i < bind_transforms.size()) {
-            idtx::core::gf_matrix_to_float16(bind_transforms[i], bind);
-        } else {
-            for (int k = 0; k < 16; ++k) bind[k] = (k % 5 == 0) ? 1.0f : 0.0f;
-        }
-
-        idtx_skeleton_add_bone(skel, bone_name.c_str(), find_parent(jp), rest, bind);
-    }
-
-    return skel;
-}
-
-// Read a UsdGeomMesh into an idtx_mesh_t. Returns NULL if positions
-// or indices are missing/empty.
-static idtx_mesh_t* read_mesh(pxr::UsdPrim const& prim)
-{
-    pxr::UsdGeomMesh m(prim);
-    if (!m) return nullptr;
-
-    pxr::VtArray<pxr::GfVec3f> points;
-    pxr::VtArray<int> face_counts;
-    pxr::VtArray<int> face_indices;
-    m.GetPointsAttr().Get(&points);
-    m.GetFaceVertexCountsAttr().Get(&face_counts);
-    m.GetFaceVertexIndicesAttr().Get(&face_indices);
-    if (points.empty() || face_indices.empty()) return nullptr;
-
-    int32_t vc = static_cast<int32_t>(points.size());
-    std::vector<float> positions(static_cast<size_t>(vc) * 3);
-    for (int32_t i = 0; i < vc; ++i) {
-        positions[i * 3 + 0] = points[i][0];
-        positions[i * 3 + 1] = points[i][1];
-        positions[i * 3 + 2] = points[i][2];
-    }
-
-    std::vector<float> normals;
-    pxr::VtArray<pxr::GfVec3f> norm_arr;
-    if (m.GetNormalsAttr() && m.GetNormalsAttr().Get(&norm_arr) && static_cast<int32_t>(norm_arr.size()) == vc) {
-        normals.resize(static_cast<size_t>(vc) * 3);
-        for (int32_t i = 0; i < vc; ++i) {
-            normals[i * 3 + 0] = norm_arr[i][0];
-            normals[i * 3 + 1] = norm_arr[i][1];
-            normals[i * 3 + 2] = norm_arr[i][2];
-        }
-    }
-
-    std::vector<float> uvs;
-    pxr::UsdGeomPrimvarsAPI pvapi(prim);
-    auto st = pvapi.GetPrimvar(pxr::TfToken("st"));
-    pxr::VtArray<pxr::GfVec2f> uv_arr;
-    if (st && st.Get(&uv_arr) && static_cast<int32_t>(uv_arr.size()) == vc) {
-        uvs.resize(static_cast<size_t>(vc) * 2);
-        for (int32_t i = 0; i < vc; ++i) {
-            uvs[i * 2 + 0] = uv_arr[i][0];
-            uvs[i * 2 + 1] = uv_arr[i][1];
-        }
-    }
-
-    std::vector<float> colors;
-    pxr::VtArray<pxr::GfVec3f> color_arr;
-    if (m.GetDisplayColorAttr() && m.GetDisplayColorAttr().Get(&color_arr)
-        && static_cast<int32_t>(color_arr.size()) == vc) {
-        colors.resize(static_cast<size_t>(vc) * 4);
-        for (int32_t i = 0; i < vc; ++i) {
-            colors[i * 4 + 0] = color_arr[i][0];
-            colors[i * 4 + 1] = color_arr[i][1];
-            colors[i * 4 + 2] = color_arr[i][2];
-            colors[i * 4 + 3] = 1.0f;  // displayColor has no alpha
-        }
-    }
-
-    idtx_mesh_t* mesh = idtx_mesh_create();
-    idtx_mesh_set_name(mesh, prim.GetName().GetString().c_str());
-
-    idtx_mesh_set_vertices(
-        mesh, vc,
-        positions.data(),
-        normals.empty() ? nullptr : normals.data(),
-        uvs.empty()     ? nullptr : uvs.data(),
-        colors.empty()  ? nullptr : colors.data());
-
-    std::vector<int32_t> idx_buf(face_indices.size());
-    for (size_t i = 0; i < face_indices.size(); ++i) idx_buf[i] = face_indices[i];
-    idtx_mesh_set_indices(mesh, static_cast<int32_t>(face_indices.size()), idx_buf.data());
-
-    // n-gon preservation: if the source USD carried non-triangulated
-    // faceVertexCounts (i.e. not all 3's), keep them on the handle so
-    // a Godot -> USD round-trip re-emits the original topology.
-    bool any_non_triangle = false;
-    for (auto c : face_counts) {
-        if (c != 3) { any_non_triangle = true; break; }
-    }
-    if (any_non_triangle && !face_counts.empty()) {
-        std::vector<int32_t> fvc(face_counts.size());
-        for (size_t i = 0; i < face_counts.size(); ++i) fvc[i] = face_counts[i];
-        idtx_mesh_set_face_vertex_counts(
-            mesh, static_cast<int32_t>(fvc.size()), fvc.data());
-    }
-
-    // Skinning. UsdSkel allows a mesh to override the inherited
-    // Skeleton's `joints` array with its own per-mesh subset
-    // (`skel:joints` token[] on the mesh). When that override is
-    // present, per-vertex `primvars:skel:jointIndices` values are
-    // LOCAL to that subset — they index into `skel:joints` on the
-    // mesh, not into the Skeleton's global joints array.
-    //
-    // glTF's `skin.joints[]` is the SINGLE global list. We pick that
-    // list to be the Skeleton's full joints (idtx_skeleton bones in
-    // order). To make the per-vertex JOINTS_N values point at the
-    // right bones, we remap local subset indices to global indices
-    // by name lookup: find each local joint path in the global
-    // joints list and replace.
-    //
-    // Without this remap, meshes that USE the local-subset feature
-    // get every vertex skinned to whatever bone happens to sit at
-    // the same numerical index in the global array — the classic
-    // "spikes radiating from origin" Blender→Godot import artefact.
-    pxr::UsdSkelBindingAPI binding(prim);
-    if (binding) {
-        pxr::VtArray<int>   ji_arr;
-        pxr::VtArray<float> jw_arr;
-        auto ji_pv = binding.GetJointIndicesPrimvar();
-        auto jw_pv = binding.GetJointWeightsPrimvar();
-        if (ji_pv && ji_pv.Get(&ji_arr) && jw_pv && jw_pv.Get(&jw_arr)
-            && !ji_arr.empty() && ji_arr.size() == jw_arr.size()
-            && (ji_arr.size() % static_cast<size_t>(vc)) == 0) {
-
-            // Build LOCAL -> GLOBAL remap if the mesh overrides
-            // skel:joints. Empty override means "inherit the
-            // Skeleton's joints"; in that case LOCAL == GLOBAL.
-            std::vector<int32_t> local_to_global;
-            pxr::UsdAttribute mesh_joints_attr = prim.GetAttribute(pxr::TfToken("skel:joints"));
-            if (mesh_joints_attr) {
-                pxr::VtArray<pxr::TfToken> mesh_joints;
-                mesh_joints_attr.Get(&mesh_joints);
-                if (!mesh_joints.empty()) {
-                    // Find the bound Skeleton's global joints list.
-                    pxr::UsdSkelSkeleton bound = binding.GetInheritedSkeleton();
-                    pxr::VtArray<pxr::TfToken> global_joints;
-                    if (bound) bound.GetJointsAttr().Get(&global_joints);
-                    // Index global by name for O(1) lookup.
-                    std::unordered_map<std::string, int32_t> global_idx;
-                    global_idx.reserve(global_joints.size());
-                    for (size_t i = 0; i < global_joints.size(); ++i) {
-                        global_idx[global_joints[i].GetString()] = static_cast<int32_t>(i);
-                    }
-                    local_to_global.resize(mesh_joints.size(), -1);
-                    for (size_t i = 0; i < mesh_joints.size(); ++i) {
-                        auto it = global_idx.find(mesh_joints[i].GetString());
-                        if (it != global_idx.end()) {
-                            local_to_global[i] = it->second;
-                        }
-                    }
-                }
-            }
-
-            int32_t bpv = static_cast<int32_t>(ji_arr.size() / static_cast<size_t>(vc));
-            std::vector<int32_t> ibuf(ji_arr.size());
-            std::vector<float>   wbuf(jw_arr.size());
-            for (size_t i = 0; i < ji_arr.size(); ++i) {
-                int32_t v = ji_arr[i];
-                if (!local_to_global.empty()) {
-                    // Remap LOCAL -> GLOBAL. Out-of-range local indices
-                    // get -1 (will be clamped to 0 with zero weight
-                    // downstream); unmapped joints (Skeleton didn't
-                    // have that name) also -1.
-                    if (v >= 0 && v < static_cast<int32_t>(local_to_global.size())) {
-                        v = local_to_global[v];
-                    } else {
-                        v = -1;
-                    }
-                }
-                ibuf[i] = v;
-            }
-            for (size_t i = 0; i < jw_arr.size(); ++i) wbuf[i] = jw_arr[i];
-
-            // Zero out weights for any unresolved bones (-1) so the
-            // GPU's `skin.joints[bone]` lookup doesn't read OOB.
-            for (size_t i = 0; i < ibuf.size(); ++i) {
-                if (ibuf[i] < 0) { ibuf[i] = 0; wbuf[i] = 0.0f; }
-            }
-            idtx_mesh_set_skinning(mesh, bpv, ibuf.data(), wbuf.data());
-        }
-    }
-
-    return mesh;
-}
 
 // Locate the UsdPreviewSurface shader subprim of a UsdShadeMaterial.
 // In export we always name it "PreviewSurface"; in import we accept
@@ -593,97 +307,43 @@ static idtx_physics_collider_t* read_physics_collider(pxr::UsdPrim const& prim)
 extern "C" IDTX_CORE_API idtx_avatar_t* idtx_core_import_avatar_from_usd(const char* path)
 {
     if (path == nullptr) return nullptr;
+    // ONE reader. Geometry (meshes + skeleton + materials) AND the coordinate-
+    // frame change of basis come from the shared scene converter — the same code
+    // path the Godot host uses. We build the flat avatar from the converted
+    // (Y-up, fully baked) scene, then layer on the stage-only VRM extras below.
+    // This replaces the former bespoke read_mesh / read_skeleton + hand-rolled
+    // up-axis rotation, which diverged from the converter and mis-handled the
+    // SkelRoot's placement (root change is not a full conversion).
+    idtx_scene_t* scene = idtx_core_import_scene_from_usd(path);
+    if (scene == nullptr) return nullptr;
+    idtx_avatar_t* avatar = idtx_scene_build_avatar(scene);
+    idtx_core_scene_destroy(scene);
+    if (avatar == nullptr) return nullptr;
+
+    // Reopen the stage for the extras the flat scene does not carry (provenance,
+    // physics colliders, spring bones). USD caches the layer, so this is cheap.
     pxr::UsdStageRefPtr stage = pxr::UsdStage::Open(std::string(path));
-    if (!stage) return nullptr;
+    if (!stage) return avatar;            // geometry is already valid
 
     pxr::UsdPrim root = idtx::core::detail::pick_avatar_root(stage);
-    if (!root.IsValid()) return nullptr;
-
-    idtx_avatar_t* avatar = idtx_avatar_create();
+    if (!root.IsValid()) return avatar;
     idtx_avatar_set_name(avatar, root.GetName().GetString().c_str());
 
-    // Round-trip provenance: remember the stage we came from so a later
-    // idtx_core_export_avatar_to_usd_ex() can author deltas against it
-    // (overlay / layer-only / flatten modes) without the host re-passing
-    // the source path. Use the stage's resolved root-layer identifier so
-    // sublayered / packaged stages resolve back to the right asset.
+    // Round-trip provenance: source layer identifier (so a later export can
+    // author deltas against it) + source-VRM-upgrade version from customData.
     {
         std::string src = stage->GetRootLayer()
             ? stage->GetRootLayer()->GetIdentifier()
             : std::string(path);
         idtx_avatar_set_source_usd_path(avatar, src.c_str());
     }
-
-    // Recover source-VRM-version provenance from the root prim's
-    // customData. Empty when the avatar was never upgraded.
-    pxr::VtDictionary cd = root.GetCustomData();
-    auto it = cd.find("vSekai:upgrade:fromVrm");
-    if (it != cd.end() && it->second.IsHolding<std::string>()) {
-        idtx_avatar_set_source_vrm_version(
-            avatar, it->second.Get<std::string>().c_str());
-    }
-
-    // Read root transform if the root prim is Xformable.
-    if (auto xf = pxr::UsdGeomXformable(root)) {
-        pxr::GfMatrix4d local_xform(1.0);
-        bool resets = false;
-        xf.GetLocalTransformation(&local_xform, &resets);
-        float m[16];
-        idtx::core::gf_matrix_to_float16(local_xform, m);
-        idtx_avatar_set_root_transform(avatar, m);
-    }
-
-    if (auto skel_prim = idtx::core::detail::find_first_skeleton_prim(root)) {
-        if (auto* skel = idtx::core::detail::read_skeleton(skel_prim)) {
-            idtx_avatar_set_skeleton(avatar, skel);
+    {
+        pxr::VtDictionary cd = root.GetCustomData();
+        auto it = cd.find("vSekai:upgrade:fromVrm");
+        if (it != cd.end() && it->second.IsHolding<std::string>()) {
+            idtx_avatar_set_source_vrm_version(
+                avatar, it->second.Get<std::string>().c_str());
         }
-    }
-
-    // Two-pass walk: first collect materials so we can resolve mesh
-    // bindings without having to grow a setter on idtx_avatar.
-    std::unordered_map<std::string, int32_t> mat_path_to_index;
-    for (auto const& prim : pxr::UsdPrimRange(root)) {
-        if (prim.IsA<pxr::UsdShadeMaterial>()) {
-            idtx_material_t* mat = idtx::core::detail::read_material(prim);
-            int32_t idx = idtx_avatar_add_material(avatar, mat);
-            mat_path_to_index[prim.GetPath().GetString()] = idx;
-        }
-    }
-
-    for (auto const& prim : pxr::UsdPrimRange(root)) {
-        if (!prim.IsA<pxr::UsdGeomMesh>()) continue;
-        idtx_mesh_t* mesh = idtx::core::detail::read_mesh(prim);
-        if (mesh == nullptr) continue;
-
-        // Material binding resolution. Two paths:
-        //   1. ComputeBoundMaterial — requires MaterialBindingAPI to be
-        //      applied on the prim. Works for assets authored through
-        //      UsdShadeMaterialBindingAPI::Bind() (our own exports do
-        //      this implicitly).
-        //   2. Direct material:binding rel lookup — for fixtures and
-        //      third-party USDs that author the rel without applying
-        //      the API explicitly. Common on hand-authored .usda files.
-        int32_t mat_index = -1;
-        pxr::UsdShadeMaterialBindingAPI binding(prim);
-        if (binding) {
-            pxr::UsdShadeMaterial bound = binding.ComputeBoundMaterial();
-            if (bound) {
-                auto it = mat_path_to_index.find(bound.GetPath().GetString());
-                if (it != mat_path_to_index.end()) mat_index = it->second;
-            }
-        }
-        if (mat_index < 0) {
-            pxr::UsdRelationship rel = prim.GetRelationship(pxr::TfToken("material:binding"));
-            if (rel) {
-                pxr::SdfPathVector targets;
-                rel.GetTargets(&targets);
-                if (!targets.empty()) {
-                    auto it = mat_path_to_index.find(targets[0].GetString());
-                    if (it != mat_path_to_index.end()) mat_index = it->second;
-                }
-            }
-        }
-        idtx_avatar_add_mesh(avatar, mesh, mat_index);
     }
 
     // Physics colliders — walk for PhysicsCollisionAPI-applied prims.
@@ -707,124 +367,30 @@ extern "C" IDTX_CORE_API idtx_avatar_t* idtx_core_import_avatar_from_usd(const c
         }
     }
 
-    // Coordinate-system normalisation. VRM 1.0 is Y-up; USD's
-    // UsdGeomGetStageUpAxis can be Y or Z (Blender authors Z-up by
-    // default, scoot from Maya / Houdini authors Y-up). When the
-    // source is Z-up, bake the rotation INTO every position, normal,
-    // bind matrix, and the root rest transforms so the idtx_avatar
-    // lives natively in Y-up. Avoids fudging with a glTF root-node
-    // rotation that downstream consumers can ignore or strip.
+    // Coordinate-system normalisation for the world-space EXTRAS only. The
+    // geometry (mesh verts/normals, skeleton bind/rest) was already rebased into
+    // the converter's Y-up universe frame by idtx_scene_build_avatar — we must
+    // NOT touch it again here. Spring-bone gravity is an authored world-space
+    // direction the flat scene doesn't carry, so it still needs the same change
+    // of basis. Collider offsets are bone-relative and ride the baked skeleton.
     //
-    // Rotation matrix (USD row-major):
-    //   ( (1, 0, 0, 0),
-    //     (0, 0,-1, 0),
-    //     (0, 1, 0, 0),
-    //     (0, 0, 0, 1) )
-    // takes (x, y_zup, z_zup) -> (x, z_zup, -y_zup). +Z up -> +Y up.
+    //   Z-up -> Y-up:  (x, y, z) -> (x,  z, -y)
+    //   X-up -> Y-up:  (x, y, z) -> (-y, x,  z)
     pxr::TfToken upAxis = pxr::UsdGeomGetStageUpAxis(stage);
-    if (upAxis == pxr::UsdGeomTokens->z) {
-        pxr::GfMatrix4d R(1.0);
-        R.SetRow(1, pxr::GfVec4d(0, 0, -1, 0));
-        R.SetRow(2, pxr::GfVec4d(0, 1,  0, 0));
-
-        auto rotate_vec3 = [&](float& x, float& y, float& z) {
-            pxr::GfVec4f v(x, y, z, 0.0f);   // direction (w=0)
-            pxr::GfVec4d v_d(v[0], v[1], v[2], 0.0);
-            v_d = v_d * R;
-            x = static_cast<float>(v_d[0]);
-            y = static_cast<float>(v_d[1]);
-            z = static_cast<float>(v_d[2]);
+    if (upAxis == pxr::UsdGeomTokens->z || upAxis == pxr::UsdGeomTokens->x) {
+        const bool z_up = (upAxis == pxr::UsdGeomTokens->z);
+        auto rebase_dir = [&](float g[3]) {
+            const float x = g[0], y = g[1], z = g[2];
+            if (z_up) { g[0] = x;  g[1] = z; g[2] = -y; }
+            else      { g[0] = -y; g[1] = x; g[2] = z;  }
         };
-
-        auto rotate_mat4 = [&](float m[16]) {
-            pxr::GfMatrix4d M = idtx::core::float16_to_gf_matrix(m);
-            // World-space transforms (bind) need to be rotated into
-            // the new world frame: M' = M * R (since USD uses
-            // row-vector convention, premultiplying by the input
-            // basis change is on the RIGHT).
-            M = M * R;
-            idtx::core::gf_matrix_to_float16(M, m);
-        };
-
-        // Bone bind matrices (world-space) and root bones' rest
-        // matrices (relative-to-world). Non-root bones' rests are
-        // joint-local — the parent's frame already carries the
-        // rotation, so the local transform stays unchanged.
-        if (auto* skel = idtx_avatar_get_skeleton(avatar)) {
-            int32_t bc = idtx_skeleton_get_bone_count(skel);
-            for (int32_t i = 0; i < bc; ++i) {
-                float m[16];
-                idtx_skeleton_get_bone_bind(skel, i, m);
-                rotate_mat4(m);
-                idtx_skeleton_set_bone_bind(skel, i, m);
-
-                if (idtx_skeleton_get_bone_parent(skel, i) < 0) {
-                    idtx_skeleton_get_bone_rest(skel, i, m);
-                    rotate_mat4(m);
-                    idtx_skeleton_set_bone_rest(skel, i, m);
-                }
-            }
-        }
-
-        // Mesh positions + normals. For SKINNED meshes, vertex
-        // positions live in the (bind-time) mesh-local frame; the
-        // bind matrices we just rotated reproject them on the GPU.
-        // For UNSKINNED meshes, the mesh node's transform handles
-        // positioning. In both cases the per-vertex data is in a
-        // Z-up frame and needs the rotation baked in so consumers
-        // that respect Y-up convention render correctly.
-        int32_t mesh_count_local = idtx_avatar_get_mesh_count(avatar);
-        for (int32_t mi = 0; mi < mesh_count_local; ++mi) {
-            auto* mh = idtx_avatar_get_mesh(avatar, mi);
-            if (mh == nullptr) continue;
-            int32_t vc = idtx_mesh_get_vertex_count(mh);
-            if (vc <= 0) continue;
-            std::vector<float> pos(static_cast<size_t>(vc) * 3);
-            idtx_mesh_get_positions(mh, pos.data());
-            for (int32_t v = 0; v < vc; ++v) {
-                rotate_vec3(pos[v*3], pos[v*3+1], pos[v*3+2]);
-            }
-            std::vector<float> nrm;
-            if (idtx_mesh_has_normals(mh)) {
-                nrm.resize(static_cast<size_t>(vc) * 3);
-                idtx_mesh_get_normals(mh, nrm.data());
-                for (int32_t v = 0; v < vc; ++v) {
-                    rotate_vec3(nrm[v*3], nrm[v*3+1], nrm[v*3+2]);
-                }
-            }
-            // Re-set vertices (positions + optionally normals; keep
-            // existing uvs / colors). idtx_mesh_set_vertices reads
-            // existing buffers for the optional channels.
-            std::vector<float> uvs, cols;
-            if (idtx_mesh_has_uvs(mh)) {
-                uvs.resize(static_cast<size_t>(vc) * 2);
-                idtx_mesh_get_uvs(mh, uvs.data());
-            }
-            if (idtx_mesh_has_colors(mh)) {
-                cols.resize(static_cast<size_t>(vc) * 4);
-                idtx_mesh_get_colors(mh, cols.data());
-            }
-            idtx_mesh_set_vertices(mh, vc, pos.data(),
-                nrm.empty() ? nullptr : nrm.data(),
-                uvs.empty() ? nullptr : uvs.data(),
-                cols.empty() ? nullptr : cols.data());
-        }
-
-        // Spring-bone gravity dirs (world-space directions).
         int32_t chain_count_local = idtx_avatar_get_spring_chain_count(avatar);
         for (int32_t i = 0; i < chain_count_local; ++i) {
             auto* ch = idtx_avatar_get_spring_chain(avatar, i);
             float g[3]; idtx_spring_chain_get_gravity_dir(ch, g);
-            rotate_vec3(g[0], g[1], g[2]);
+            rebase_dir(g);
             idtx_spring_chain_set_gravity_dir(ch, g[0], g[1], g[2]);
         }
-
-        // Avatar root transform — pre-rotation it was an identity
-        // (or whatever the SkelRoot's local xform encoded) in the
-        // Z-up frame. We already rotated the data we care about
-        // INTO Y-up, so the root_transform stays as-is — it
-        // represents "this avatar's identity transform in the new
-        // Y-up world frame".
     }
 
     return avatar;

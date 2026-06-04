@@ -306,9 +306,11 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertPrimPostProcess(
 template <> inline std::vector<SC::FlatNode*> UsdStageConverter<FT>::ConvertStagePostProcess(
     const std::vector<SC::FlatNode*>& entities) {
     OwningEntity->meters_per_unit = StageMetersPerUnit;
-    OwningEntity->up_axis = (StageUpAxis == pxr::UsdGeomTokens->z) ? IDTX_AXIS_Z
-                          : (StageUpAxis == pxr::UsdGeomTokens->x) ? IDTX_AXIS_X
-                          : IDTX_AXIS_Y;
+    // The up-axis change of basis was already baked into every transform and
+    // point during conversion (TypeConverter::set_up_axis_basis), so the scene is
+    // now Y-up regardless of the stage's authored axis. Report Y so hosts don't
+    // re-apply a root rotation on top of the already-rebased data.
+    OwningEntity->up_axis = IDTX_AXIS_Y;
     return entities;
 }
 

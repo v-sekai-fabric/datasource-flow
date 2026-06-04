@@ -123,6 +123,14 @@ IDTX_CORE_API idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri);
 
 IDTX_CORE_API void idtx_core_scene_destroy(idtx_scene_t* scene);
 
+// Adapt a converted (Y-up) scene into a flat idtx_avatar, baking each node's
+// world transform fully into its geometry (no compensating root_transform).
+// TRANSFERS ownership of the scene's geometry + material handles into the
+// avatar (their scene slots are nulled). The caller still owns `scene` and must
+// destroy it. Only the first/most-bones skeleton is taken (single-skeleton
+// avatar model). Returns a new avatar the caller must idtx_avatar_destroy.
+IDTX_CORE_API idtx_avatar_t* idtx_scene_build_avatar(idtx_scene_t* scene);
+
 // ---------------------------------------------------------------------
 // Stage metadata — needed for the host's coordinate-system fix-up
 // (ConvertStagePostProcess applied this on the converted root).

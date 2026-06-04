@@ -33,7 +33,15 @@ template <> inline S::FVec2
 UsdTypeConverter<FT>::toVector2(const pxr::GfVec2d& v) { return {float(v[0]), float(v[1])}; }
 
 template <> inline S::FVec3
-UsdTypeConverter<FT>::toVector3(const pxr::GfVec3d& v) { return {float(v[0]), float(v[1]), float(v[2])}; }
+UsdTypeConverter<FT>::toVector3(const pxr::GfVec3d& v) {
+    // p' = B p — rebase the point into the engine's Y-up frame (identity for
+    // Y-up stages). Same basis used for normals and blend-shape deltas.
+    const float* B = s_up_basis;
+    const float x = float(v[0]), y = float(v[1]), z = float(v[2]);
+    return { B[0]*x + B[1]*y + B[2]*z,
+             B[3]*x + B[4]*y + B[5]*z,
+             B[6]*x + B[7]*y + B[8]*z };
+}
 
 template <> inline S::FVec4
 UsdTypeConverter<FT>::toVector4(const pxr::GfVec4d& v) { return {float(v[0]), float(v[1]), float(v[2]), float(v[3])}; }
@@ -53,25 +61,47 @@ UsdTypeConverter<FT>::toColor(const pxr::GfVec4f& c) { return {c[0], c[1], c[2],
 // z-spine -> +90° X), via a 3x3 multiply on the basis rows.
 template <> inline S::FTransform
 UsdTypeConverter<FT>::toTransform(const pxr::GfMatrix4d& m, const pxr::TfToken& spineAxis) {
+    // USD row-vector basis (rows) + translation.
+    float R[9];
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            R[r*3+c] = float(m[r][c]);
+    float tr[3] = { float(m[3][0]), float(m[3][1]), float(m[3][2]) };
+
+    // Spine-axis bake for cone/cylinder primitives (basis rows = basis * rot).
+    if (spineAxis == pxr::UsdGeomTokens->x || spineAxis == pxr::UsdGeomTokens->z) {
+        static const float rz[9] = {0,1,0, -1,0,0, 0,0,1};  // +90° about Z
+        static const float rx[9] = {1,0,0, 0,0,1, 0,-1,0};  // +90° about X
+        const float* rot = (spineAxis == pxr::UsdGeomTokens->x) ? rz : rx;
+        float tmp[9];
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                tmp[r*3+c] = R[r*3+0]*rot[0*3+c] + R[r*3+1]*rot[1*3+c] + R[r*3+2]*rot[2*3+c];
+        std::copy_n(tmp, 9, R);
+    }
+
+    // Up-axis change of basis: R' = B R B^T, t' = B t — rebases the transform into
+    // the engine Y-up frame, consistent with the points/normals above. B is a
+    // proper rotation so B^-1 = B^T (B[c*3+k] is B^T[k][c]).
+    const float* B = s_up_basis;
+    float BR[9];
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            BR[r*3+c] = B[r*3+0]*R[0*3+c] + B[r*3+1]*R[1*3+c] + B[r*3+2]*R[2*3+c];
+    float Rp[9];
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            Rp[r*3+c] = BR[r*3+0]*B[c*3+0] + BR[r*3+1]*B[c*3+1] + BR[r*3+2]*B[c*3+2];
+    const float Bt[3] = {
+        B[0]*tr[0] + B[1]*tr[1] + B[2]*tr[2],
+        B[3]*tr[0] + B[4]*tr[1] + B[5]*tr[2],
+        B[6]*tr[0] + B[7]*tr[1] + B[8]*tr[2] };
+
     S::FTransform t;
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c)
-            t.m[r * 4 + c] = float(m[r][c]);
-    t.m[12] = float(m[3][0]); t.m[13] = float(m[3][1]); t.m[14] = float(m[3][2]);
-
-    if (spineAxis == pxr::UsdGeomTokens->x || spineAxis == pxr::UsdGeomTokens->z) {
-        // rot[3][3] = +90° about Z (x-spine) or X (z-spine)
-        static const float rz[9] = {0,1,0, -1,0,0, 0,0,1};  // +90° about Z
-        static const float rx[9] = {1,0,0, 0,0,1, 0,-1,0};  // +90° about X
-        float rot[3][3];
-        std::copy_n(spineAxis == pxr::UsdGeomTokens->x ? rz : rx, 9, &rot[0][0]);
-        // basis (rows 0..2) = basis * rot
-        for (int r = 0; r < 3; ++r) {
-            float row[3] = {t.m[r*4+0], t.m[r*4+1], t.m[r*4+2]};
-            for (int c = 0; c < 3; ++c)
-                t.m[r*4+c] = row[0]*rot[0][c] + row[1]*rot[1][c] + row[2]*rot[2][c];
-        }
-    }
+            t.m[r*4+c] = Rp[r*3+c];
+    t.m[12] = Bt[0]; t.m[13] = Bt[1]; t.m[14] = Bt[2];
     return t;
 }
 

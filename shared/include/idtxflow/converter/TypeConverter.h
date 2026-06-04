@@ -14,6 +14,8 @@
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/tf/token.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include "../types/TargetTypes.h"
 #include "../types/MaterialTypes.h"
@@ -37,6 +39,24 @@ namespace converter
 	{
 	public:
 		using Types = idtxflow::types::TargetEngineTypes<TargetEngine>;
+
+		// Up-axis change of basis (USD up-axis -> engine Y-up), set per stage before
+		// conversion via set_up_axis_basis(). The toVector3 / toTransform
+		// specializations apply it so EVERY converted quantity is rebased the same
+		// way -- p' = B p (verts, normals, blend-shape deltas) and M' = B M B^T
+		// (node transforms, skeleton rest/bind). B is a proper rotation (USD and the
+		// engines are right-handed, so B^-1 = B^T); identity for Y-up stages. Set
+		// once per import; import is single threaded.
+		inline static float s_up_basis[9] = {1,0,0, 0,1,0, 0,0,1};
+		static void set_up_axis_basis(const class pxr::TfToken& upAxis) {
+			static const float identity[9] = {1,0,0, 0,1,0, 0,0,1};
+			static const float zToY[9]     = {1,0,0, 0,0,1, 0,-1,0};  // Z-up -> Y-up (Rx -90)
+			static const float xToY[9]     = {0,-1,0, 1,0,0, 0,0,1};  // X-up -> Y-up (Rz +90)
+			const float* src = identity;
+			if (upAxis == pxr::UsdGeomTokens->z) src = zToY;
+			else if (upAxis == pxr::UsdGeomTokens->x) src = xToY;
+			for (int i = 0; i < 9; ++i) s_up_basis[i] = src[i];
+		}
 
 		// those methods are required to be specialized for the individual target engine
 		inline static typename Types::Vector2 toVector2(const class pxr::GfVec2d& usdVec);

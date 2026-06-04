@@ -13,6 +13,7 @@
 
 #include "idtx_core/idtx_scene.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -132,6 +133,75 @@ void extract_textures(S::FlatScene& fs, const pxr::UsdStageRefPtr& stage) {
     }
 }
 
+// ---------------------------------------------------------------------
+// Flat-tree -> avatar adaptation helpers. The scene is a hierarchy (node
+// local transforms + skeleton/mesh handles); the avatar is FLAT (one root,
+// one skeleton, a mesh bag, no per-node tree). To collapse the tree we BAKE
+// each node's world transform W fully into its geometry, so the avatar is
+// natively in the converter's Y-up universe frame with NO compensating
+// root_transform. (Per design: a root xform is "not converting fully".)
+// ---------------------------------------------------------------------
+
+// row-vector 4x4 multiply C = A * B (USD/idtx float16 layout).
+void mat16_mul(const float* A, const float* B, float* C) {
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c)
+            C[r*4+c] = A[r*4+0]*B[0*4+c] + A[r*4+1]*B[1*4+c]
+                     + A[r*4+2]*B[2*4+c] + A[r*4+3]*B[3*4+c];
+}
+
+// World transform of a flat node = local * parent_local * ... * root_local
+// (row-vector: world = local_child * ... * local_root).
+void node_world(const S::FlatScene& fs, const S::FlatNode* n, float out[16]) {
+    float acc[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    const S::FlatNode* cur = n;
+    while (cur) {
+        float tmp[16];
+        mat16_mul(acc, cur->local_transform.m, tmp);
+        std::copy_n(tmp, 16, acc);
+        cur = (cur->parent >= 0 && cur->parent < (int32_t)fs.nodes.size())
+            ? fs.nodes[cur->parent].get() : nullptr;
+    }
+    std::copy_n(acc, 16, out);
+}
+
+// Bake W into a mesh's positions (p' = p*W, w=1) and normals (rotation part,
+// w=0). Rigid W => the 3x3 block is the correct normal transform.
+void bake_world_into_mesh(idtx_mesh_t* mesh, const float W[16]) {
+    if (!mesh) return;
+    int32_t vc = idtx_mesh_get_vertex_count(mesh);
+    if (vc <= 0) return;
+    std::vector<float> pos((size_t)vc * 3);
+    idtx_mesh_get_positions(mesh, pos.data());
+    for (int32_t v = 0; v < vc; ++v) {
+        float* p = &pos[v*3];
+        float x = p[0], y = p[1], z = p[2];
+        p[0] = x*W[0] + y*W[4] + z*W[8]  + W[12];
+        p[1] = x*W[1] + y*W[5] + z*W[9]  + W[13];
+        p[2] = x*W[2] + y*W[6] + z*W[10] + W[14];
+    }
+    std::vector<float> nrm;
+    bool has_n = idtx_mesh_has_normals(mesh) != 0;
+    if (has_n) {
+        nrm.resize((size_t)vc * 3);
+        idtx_mesh_get_normals(mesh, nrm.data());
+        for (int32_t v = 0; v < vc; ++v) {
+            float* nn = &nrm[v*3];
+            float x = nn[0], y = nn[1], z = nn[2];
+            nn[0] = x*W[0] + y*W[4] + z*W[8];
+            nn[1] = x*W[1] + y*W[5] + z*W[9];
+            nn[2] = x*W[2] + y*W[6] + z*W[10];
+        }
+    }
+    std::vector<float> uvs, cols;
+    if (idtx_mesh_has_uvs(mesh))    { uvs.resize((size_t)vc * 2);  idtx_mesh_get_uvs(mesh, uvs.data()); }
+    if (idtx_mesh_has_colors(mesh)) { cols.resize((size_t)vc * 4); idtx_mesh_get_colors(mesh, cols.data()); }
+    idtx_mesh_set_vertices(mesh, vc, pos.data(),
+                           has_n ? nrm.data() : nullptr,
+                           uvs.empty() ? nullptr : uvs.data(),
+                           cols.empty() ? nullptr : cols.data());
+}
+
 }  // namespace
 
 extern "C" {
@@ -168,6 +238,86 @@ IDTX_CORE_API void idtx_core_scene_destroy(idtx_scene_t* scene) {
     }
     for (idtx_material_t* m : scene->fs.materials) if (m) idtx_material_destroy(m);
     delete scene;
+}
+
+// Adapt the converted (Y-up) scene into a flat avatar, TRANSFERRING ownership
+// of the geometry handles out of the scene (their slots are nulled so a later
+// idtx_core_scene_destroy() won't double-free). Each node's world transform is
+// baked fully into its geometry so the avatar needs no root_transform. Only the
+// first skeleton is taken (the avatar model is single-skeleton); a multi-skel
+// source keeps its other rigs' skinned meshes static. Caller still owns + must
+// destroy `scene`. Materials/textures (stage-derived) are handled by the caller.
+IDTX_CORE_API idtx_avatar_t* idtx_scene_build_avatar(idtx_scene_t* scene) {
+    if (!scene) return nullptr;
+    S::FlatScene& fs = scene->fs;
+    idtx_avatar_t* avatar = idtx_avatar_create();
+
+    // Identity root: everything is baked into universe (Y-up) geometry below.
+    const float I16[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    idtx_avatar_set_root_transform(avatar, I16);
+
+    // Transfer materials first so node material_index stays valid (1:1 order).
+    for (size_t i = 0; i < fs.materials.size(); ++i) {
+        if (fs.materials[i]) {
+            idtx_avatar_add_material(avatar, fs.materials[i]);
+            fs.materials[i] = nullptr;  // ownership moved to avatar
+        }
+    }
+
+    // First skeleton node (most-bones wins, so a 1-bone decoy under a
+    // multi-skeleton SkelRoot doesn't shadow the real rig).
+    S::FlatNode* skel_node = nullptr;
+    for (auto& up : fs.nodes) {
+        S::FlatNode* n = up.get();
+        if (n->kind != IDTX_NODE_SKELETON || !n->skeleton) continue;
+        if (!skel_node ||
+            idtx_skeleton_get_bone_count(n->skeleton) >
+            idtx_skeleton_get_bone_count(skel_node->skeleton)) {
+            skel_node = n;
+        }
+    }
+
+    if (skel_node) {
+        float W[16];
+        node_world(fs, skel_node, W);
+        idtx_skeleton_t* skel = skel_node->skeleton;
+        // Bake W into bind (all joints) + rest (roots). Combined with verts*W
+        // below, skinning composes to W*posed = universe, and bind/rest/verts
+        // all live in Y-up so an armature aligns whichever it reads.
+        int32_t bc = idtx_skeleton_get_bone_count(skel);
+        for (int32_t b = 0; b < bc; ++b) {
+            float m[16], mw[16];
+            idtx_skeleton_get_bone_bind(skel, b, m);
+            mat16_mul(m, W, mw);
+            idtx_skeleton_set_bone_bind(skel, b, mw);
+            if (idtx_skeleton_get_bone_parent(skel, b) < 0) {
+                idtx_skeleton_get_bone_rest(skel, b, m);
+                mat16_mul(m, W, mw);
+                idtx_skeleton_set_bone_rest(skel, b, mw);
+            }
+        }
+        idtx_avatar_set_skeleton(avatar, skel);
+        skel_node->skeleton = nullptr;  // ownership moved
+
+        if (skel_node->skinned_mesh) {
+            bake_world_into_mesh(skel_node->skinned_mesh, W);
+            idtx_avatar_add_mesh(avatar, skel_node->skinned_mesh, skel_node->material_index);
+            skel_node->skinned_mesh = nullptr;
+        }
+    }
+
+    // Static meshes: bake each node's own world transform into its verts.
+    for (auto& up : fs.nodes) {
+        S::FlatNode* n = up.get();
+        if (n->kind != IDTX_NODE_MESH || !n->mesh) continue;
+        float Wm[16];
+        node_world(fs, n, Wm);
+        bake_world_into_mesh(n->mesh, Wm);
+        idtx_avatar_add_mesh(avatar, n->mesh, n->material_index);
+        n->mesh = nullptr;  // ownership moved
+    }
+
+    return avatar;
 }
 
 // ---- stage metadata ----

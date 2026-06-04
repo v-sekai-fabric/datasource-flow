@@ -231,6 +231,7 @@ int32_t idtx_aes_parse_script_key_json(const char* json, size_t json_len, uint8_
 # --- idtx_scene: USD stage -> engine-neutral node tree (idtx_scene.h) -------
 idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri);
 void idtx_core_scene_destroy(idtx_scene_t* scene);
+idtx_avatar_t* idtx_scene_build_avatar(idtx_scene_t* scene);
 idtx_axis_t idtx_scene_get_up_axis(const idtx_scene_t* scene);
 double idtx_scene_get_meters_per_unit(const idtx_scene_t* scene);
 int32_t idtx_scene_get_node_count(const idtx_scene_t* scene);
