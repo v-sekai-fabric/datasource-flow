@@ -540,13 +540,17 @@ namespace converter
 					faceVerts.push_back(vi);
 				}
 
-				// Triangulate this face over its deduped vertices, preserving the
-				// original winding (fan: 0, i+1, i).
+				// Triangulate this face over its deduped vertices, PRESERVING the
+				// source winding (fan: 0, i, i+1). The up-axis change of basis is a
+				// proper rotation (det +1), so it does not flip winding -- emitting
+				// the reversed fan (0, i+1, i) made every mesh wind opposite to its
+				// authored normals + `orientation`, rendering inside-out under
+				// back-face culling (Godot CULL_BACK, three.js front side, re-import).
 				for (int i = 1; i + 1 < pointCount; ++i)
 				{
 					builder.AddIndex(meshData, faceVerts[0]);
-					builder.AddIndex(meshData, faceVerts[i + 1]);
 					builder.AddIndex(meshData, faceVerts[i]);
+					builder.AddIndex(meshData, faceVerts[i + 1]);
 				}
 			}
 
