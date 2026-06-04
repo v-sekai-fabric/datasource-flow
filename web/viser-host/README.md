@@ -10,18 +10,33 @@ CHI-314 (under CHI-312, the dlopen `.sigs` ABI adoption).
 
 ## Status
 
-Proof-of-concept: `serve.py` renders an avatar in a viser scene and exposes a
-round-trip through the core in the browser GUI panel:
+`serve.py` is a full host adapter: it reads the avatar through the **same core
+ABI the Godot and Unity importers use** and renders it in a viser scene, plus a
+GUI round-trip.
 
-- **Import USD …** — upload a `.usd` / `.usda` / `.usdc` / `.usdz`; it is imported
-  with `idtx_core_import_avatar_from_usd` (the unified reader — same Y-up change
-  of basis as the Godot host) and replaces the scene.
+Geometry parity with the other adapters:
+
+- **Skeleton + skinning** — bones (bind pose) and per-vertex weights drive a
+  viser `add_mesh_skinned` (toon material), so the rig is real, not a static
+  blob.
+- **Blend shapes** — every target is read; the panel exposes live sliders that
+  morph the mesh CPU-side (capped at 64 for very large rigs — Miroir has 538).
+- **Material base color** and **normals** feed the shaded mesh.
+
+Round-trip buttons:
+
+- **Import USD …** — upload a `.usd` / `.usda` / `.usdc` / `.usdz`; imported with
+  `idtx_core_import_avatar_from_usd` (the unified reader — same Y-up change of
+  basis as the Godot host) and swapped into the scene.
 - **Export OpenUSD** — re-author the loaded avatar with
-  `idtx_core_export_avatar_to_usd` and download the resulting `.usda`.
+  `idtx_core_export_avatar_to_usd` and download the `.usda`.
 
-On launch it seeds the scene with `build/miroir_from_unity.usda` if present. This
-proves the no-WASM thesis end-to-end (ctypes load → reader/writer ABI → browser
-round-trip). Scene editing, zones, and the VRM path are not built yet.
+On launch it seeds the scene with `build/miroir_from_unity.usda` if present.
+
+Not yet wired (render-fidelity extras the viewer doesn't surface yet): base-color
+/ normal **textures**, metallic-roughness, MToon shade/rim/outline, blend-shape
+**normal** deltas, and skeletal **animation** playback. Scene editing and zones
+are also future work.
 
 ## Run
 

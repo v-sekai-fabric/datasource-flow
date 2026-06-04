@@ -1,14 +1,16 @@
-"""idtx-flow web host — proof-of-concept.
+"""idtx-flow web host — viser.
 
-Reads an avatar USD through libidtx_core (server-side, via ctypes — the SAME
-path the Blender host uses) and renders its meshes in the browser with viser.
-No WebAssembly: the core runs natively in this Python process and viser streams
-geometry to a three.js client over websockets.
+The **web host** for idtx-flow: a Python viser server that runs `libidtx_core`
+server-side natively (via ctypes, the SAME path the Blender host uses) and
+streams geometry to a three.js client in the browser. No WebAssembly.
 
-The GUI panel exposes two round-trip buttons backed by the core:
-  * Import USD …    — upload a .usd/.usda/.usdc/.usdz from the browser; it is
-                      imported via idtx_core_import_avatar_from_usd and replaces
-                      the scene.
+Parity with the other host adapters (Godot / Unity): the importer reads the
+full avatar through the core — skeleton, per-vertex skinning, blend shapes,
+material base color and normals — and renders skinned meshes (with bones) plus
+live blend-shape sliders. Two GUI buttons drive the round-trip:
+
+  * Import USD …    — upload a .usd/.usda/.usdc/.usdz; imported via
+                      idtx_core_import_avatar_from_usd (the unified Y-up reader).
   * Export OpenUSD  — re-author the loaded avatar with
                       idtx_core_export_avatar_to_usd and download the .usda.
 
@@ -25,6 +27,7 @@ import tempfile
 import threading
 import time
 from ctypes import POINTER, c_char_p, c_float, c_int32, c_void_p
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -36,96 +39,271 @@ USD_PATH = REPO / "build" / "miroir_from_unity.usda"
 
 # Reuse the proven Blender ctypes loader: it finds libidtx_core, wires its
 # OpenUSD dependency dirs, calls idtx_core_init(), and binds the export side +
-# idtx_core_import_avatar_from_usd.
+# idtx_core_import_avatar_from_usd / idtx_avatar_destroy.
 sys.path.insert(0, str(REPO / "openusd-fabric" / "blender"))
 import idtx_core_ctypes as core  # noqa: E402
 
 
 def _bind_reader(lib) -> None:
-    """Declare the read-side ABI that load() does not bind (it only needed the
-    export side for Blender). All of these already exist in idtx_core.h."""
-    lib.idtx_avatar_get_name.argtypes = [c_void_p]
-    lib.idtx_avatar_get_name.restype = c_char_p
-    lib.idtx_avatar_get_mesh_count.argtypes = [c_void_p]
-    lib.idtx_avatar_get_mesh_count.restype = c_int32
-    lib.idtx_avatar_get_mesh.argtypes = [c_void_p, c_int32]
-    lib.idtx_avatar_get_mesh.restype = c_void_p
-    lib.idtx_mesh_get_name.argtypes = [c_void_p]
-    lib.idtx_mesh_get_name.restype = c_char_p
-    lib.idtx_mesh_get_vertex_count.argtypes = [c_void_p]
-    lib.idtx_mesh_get_vertex_count.restype = c_int32
-    lib.idtx_mesh_get_index_count.argtypes = [c_void_p]
-    lib.idtx_mesh_get_index_count.restype = c_int32
-    lib.idtx_mesh_get_positions.argtypes = [c_void_p, POINTER(c_float)]
-    lib.idtx_mesh_get_indices.argtypes = [c_void_p, POINTER(c_int32)]
+    """Declare the full read-side ABI (the loader only binds import/export).
+    Every symbol already exists in idtx_core.h — the same ones the Godot and
+    Unity importers consume, so the web host reaches geometry parity."""
+    f4 = POINTER(c_float)
+    i4 = POINTER(c_int32)
+    sigs = {
+        "idtx_avatar_get_name": ([c_void_p], c_char_p),
+        "idtx_avatar_get_mesh_count": ([c_void_p], c_int32),
+        "idtx_avatar_get_mesh": ([c_void_p, c_int32], c_void_p),
+        "idtx_avatar_get_mesh_material": ([c_void_p, c_int32], c_int32),
+        "idtx_avatar_get_skeleton": ([c_void_p], c_void_p),
+        "idtx_avatar_get_material_count": ([c_void_p], c_int32),
+        "idtx_avatar_get_material": ([c_void_p, c_int32], c_void_p),
+        # mesh
+        "idtx_mesh_get_name": ([c_void_p], c_char_p),
+        "idtx_mesh_get_vertex_count": ([c_void_p], c_int32),
+        "idtx_mesh_get_index_count": ([c_void_p], c_int32),
+        "idtx_mesh_get_bones_per_vertex": ([c_void_p], c_int32),
+        "idtx_mesh_get_positions": ([c_void_p, f4], None),
+        "idtx_mesh_get_normals": ([c_void_p, f4], None),
+        "idtx_mesh_get_uvs": ([c_void_p, f4], None),
+        "idtx_mesh_get_colors": ([c_void_p, f4], None),
+        "idtx_mesh_get_indices": ([c_void_p, i4], None),
+        "idtx_mesh_get_bone_indices": ([c_void_p, i4], None),
+        "idtx_mesh_get_weights": ([c_void_p, f4], None),
+        "idtx_mesh_has_normals": ([c_void_p], c_int32),
+        "idtx_mesh_has_colors": ([c_void_p], c_int32),
+        "idtx_mesh_get_blendshape_count": ([c_void_p], c_int32),
+        "idtx_mesh_get_blendshape_name": ([c_void_p, c_int32], c_char_p),
+        "idtx_mesh_get_blendshape_weight": ([c_void_p, c_int32], c_float),
+        "idtx_mesh_get_blendshape_position_deltas": ([c_void_p, c_int32, f4], None),
+        # skeleton
+        "idtx_skeleton_get_bone_count": ([c_void_p], c_int32),
+        "idtx_skeleton_get_bone_name": ([c_void_p, c_int32], c_char_p),
+        "idtx_skeleton_get_bone_parent": ([c_void_p, c_int32], c_int32),
+        "idtx_skeleton_get_bone_bind": ([c_void_p, c_int32, f4], None),
+        # material
+        "idtx_material_get_base_color": ([c_void_p, f4], None),
+    }
+    for fn, (argtypes, restype) in sigs.items():
+        getattr(lib, fn).argtypes = argtypes
+        getattr(lib, fn).restype = restype
 
 
-def _avatar_meshes(lib, avatar):
-    """avatar handle -> [(name, verts Nx3 float32, faces Mx3 int32)]."""
-    parts = []
-    for i in range(lib.idtx_avatar_get_mesh_count(avatar)):
-        mesh = lib.idtx_avatar_get_mesh(avatar, i)
-        vc = lib.idtx_mesh_get_vertex_count(mesh)
-        ic = lib.idtx_mesh_get_index_count(mesh)
-        if vc <= 0 or ic <= 0:
-            continue
-        pos = (c_float * (vc * 3))()
-        idx = (c_int32 * ic)()
-        lib.idtx_mesh_get_positions(mesh, pos)
-        lib.idtx_mesh_get_indices(mesh, idx)
-        verts = np.ctypeslib.as_array(pos).reshape(-1, 3).astype(np.float32).copy()
-        faces = np.ctypeslib.as_array(idx).reshape(-1, 3).astype(np.int32).copy()
-        part = (lib.idtx_mesh_get_name(mesh) or f"mesh_{i}".encode()).decode("utf-8")
-        parts.append((part, verts, faces))
-    return parts
+# --------------------------------------------------------------------------
+# Core readback -> plain numpy structures.
+# --------------------------------------------------------------------------
 
+@dataclass
+class MeshData:
+    name: str
+    verts: np.ndarray            # (V,3) f32, rest pose
+    faces: np.ndarray            # (F,3) i32
+    normals: np.ndarray | None   # (V,3) f32
+    color: tuple[int, int, int]  # base color (0-255)
+    skin: np.ndarray | None      # (V,B) f32 dense skin weights, or None
+    blendshapes: list = field(default_factory=list)  # [(name, deltas (V,3))]
+
+
+@dataclass
+class Bone:
+    name: str
+    parent: int
+    wxyz: tuple[float, float, float, float]
+    position: tuple[float, float, float]
+
+
+def _mat_to_wxyz(m16: np.ndarray) -> tuple[float, float, float, float]:
+    """Quaternion (w,x,y,z) from the rotation block of a row-vector float16."""
+    R = np.array([[m16[0], m16[1], m16[2]],
+                  [m16[4], m16[5], m16[6]],
+                  [m16[8], m16[9], m16[10]]], dtype=np.float64)
+    # Orthonormalise rows (strip any uniform scale) so the trace method is stable.
+    for i in range(3):
+        n = np.linalg.norm(R[i])
+        if n > 1e-12:
+            R[i] /= n
+    t = R[0, 0] + R[1, 1] + R[2, 2]
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2
+        w = 0.25 * s
+        x = (R[2, 1] - R[1, 2]) / s
+        y = (R[0, 2] - R[2, 0]) / s
+        z = (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
+        w = (R[2, 1] - R[1, 2]) / s
+        x = 0.25 * s
+        y = (R[0, 1] + R[1, 0]) / s
+        z = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
+        w = (R[0, 2] - R[2, 0]) / s
+        x = (R[0, 1] + R[1, 0]) / s
+        y = 0.25 * s
+        z = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
+        w = (R[1, 0] - R[0, 1]) / s
+        x = (R[0, 2] + R[2, 0]) / s
+        y = (R[1, 2] + R[2, 1]) / s
+        z = 0.25 * s
+    return (float(w), float(x), float(y), float(z))
+
+
+def read_skeleton(lib, skel) -> list[Bone]:
+    if not skel:
+        return []
+    bones = []
+    for i in range(lib.idtx_skeleton_get_bone_count(skel)):
+        name = (lib.idtx_skeleton_get_bone_name(skel, i) or f"bone_{i}".encode()).decode("utf-8")
+        parent = lib.idtx_skeleton_get_bone_parent(skel, i)
+        m = (c_float * 16)()
+        lib.idtx_skeleton_get_bone_bind(skel, i, m)
+        m = np.ctypeslib.as_array(m).copy()
+        bones.append(Bone(name, parent, _mat_to_wxyz(m), (float(m[12]), float(m[13]), float(m[14]))))
+    return bones
+
+
+def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
+    mesh = lib.idtx_avatar_get_mesh(avatar, i)
+    vc = lib.idtx_mesh_get_vertex_count(mesh)
+    ic = lib.idtx_mesh_get_index_count(mesh)
+    if vc <= 0 or ic <= 0:
+        return None
+    name = (lib.idtx_mesh_get_name(mesh) or f"mesh_{i}".encode()).decode("utf-8")
+
+    pos = (c_float * (vc * 3))()
+    idx = (c_int32 * ic)()
+    lib.idtx_mesh_get_positions(mesh, pos)
+    lib.idtx_mesh_get_indices(mesh, idx)
+    verts = np.ctypeslib.as_array(pos).reshape(-1, 3).astype(np.float32).copy()
+    faces = np.ctypeslib.as_array(idx).reshape(-1, 3).astype(np.int32).copy()
+
+    normals = None
+    if lib.idtx_mesh_has_normals(mesh):
+        nrm = (c_float * (vc * 3))()
+        lib.idtx_mesh_get_normals(mesh, nrm)
+        normals = np.ctypeslib.as_array(nrm).reshape(-1, 3).astype(np.float32).copy()
+
+    # Base color: material on this mesh, else a neutral skin tone.
+    color = (200, 184, 168)
+    mat_idx = lib.idtx_avatar_get_mesh_material(avatar, i)
+    if mat_idx >= 0:
+        mat = lib.idtx_avatar_get_material(avatar, mat_idx)
+        if mat:
+            rgba = (c_float * 4)()
+            lib.idtx_material_get_base_color(mat, rgba)
+            color = tuple(int(max(0.0, min(1.0, rgba[k])) * 255) for k in range(3))
+
+    # Dense skin weights (V, num_bones) from the 4-per-vertex sparse channels.
+    skin = None
+    bpv = lib.idtx_mesh_get_bones_per_vertex(mesh)
+    if bpv > 0 and num_bones > 0:
+        bi = (c_int32 * (vc * bpv))()
+        bw = (c_float * (vc * bpv))()
+        lib.idtx_mesh_get_bone_indices(mesh, bi)
+        lib.idtx_mesh_get_weights(mesh, bw)
+        bidx = np.ctypeslib.as_array(bi).reshape(vc, bpv)
+        bwt = np.ctypeslib.as_array(bw).reshape(vc, bpv).astype(np.float32)
+        skin = np.zeros((vc, num_bones), dtype=np.float32)
+        rows = np.arange(vc)[:, None]
+        np.clip(bidx, 0, num_bones - 1, out=bidx)
+        skin[rows, bidx] = bwt
+
+    # Blend shapes (position deltas only; viser morphs CPU-side).
+    blendshapes = []
+    for b in range(lib.idtx_mesh_get_blendshape_count(mesh)):
+        bname = (lib.idtx_mesh_get_blendshape_name(mesh, b) or f"shape_{b}".encode()).decode("utf-8")
+        d = (c_float * (vc * 3))()
+        lib.idtx_mesh_get_blendshape_position_deltas(mesh, b, d)
+        deltas = np.ctypeslib.as_array(d).reshape(-1, 3).astype(np.float32).copy()
+        blendshapes.append((bname, deltas))
+
+    return MeshData(name, verts, faces, normals, color, skin, blendshapes)
+
+
+# --------------------------------------------------------------------------
+# Host: owns the live avatar + scene nodes; drives import/export/blendshapes.
+# --------------------------------------------------------------------------
 
 class Host:
-    """Owns the live avatar handle + its rendered scene nodes, so Import can
-    swap them and Export can re-author the currently loaded avatar."""
-
     def __init__(self, lib, server: viser.ViserServer) -> None:
         self.lib = lib
         self.server = server
         self._lock = threading.Lock()
-        self._avatar = None          # live idtx_avatar_t* (kept for export)
-        self._nodes: list = []       # viser scene handles to remove on reload
+        self._avatar = None
+        self._nodes: list = []
+        self._meshes: list[MeshData] = []
+        self._weights: dict[str, float] = {}   # blendshape name -> weight
         self.name = "avatar"
 
-    def load(self, usd_path: Path) -> str:
-        """Import a USD through the core and (re)build the scene. Returns a
-        human-readable status string; raises on import failure."""
-        avatar = self.lib.idtx_core_import_avatar_from_usd(
-            str(usd_path).encode("utf-8"))
+    def load(self, usd_path: Path):
+        avatar = self.lib.idtx_core_import_avatar_from_usd(str(usd_path).encode("utf-8"))
         if not avatar:
             raise RuntimeError(f"libidtx_core failed to import {usd_path.name}")
         name = (self.lib.idtx_avatar_get_name(avatar) or b"avatar").decode("utf-8")
-        parts = _avatar_meshes(self.lib, avatar)
+        skel = self.lib.idtx_avatar_get_skeleton(avatar)
+        bones = read_skeleton(self.lib, skel)
+        nb = len(bones)
+        meshes = []
+        for i in range(self.lib.idtx_avatar_get_mesh_count(avatar)):
+            md = read_mesh(self.lib, avatar, i, nb)
+            if md is not None:
+                meshes.append(md)
 
         with self._lock:
-            # Swap in the new avatar; free the previous one + its scene nodes.
-            for node in self._nodes:
-                node.remove()
-            self._nodes.clear()
             if self._avatar is not None:
                 self.lib.idtx_avatar_destroy(self._avatar)
             self._avatar = avatar
             self.name = name
+            self._meshes = meshes
+            self._bones = bones
+            # collect the blend-shape names across meshes for the GUI
+            self._weights = {bn: 0.0 for md in meshes for (bn, _) in md.blendshapes}
+            self._rebuild_scene()
+            tris = sum(len(m.faces) for m in meshes)
+        return name, len(meshes), tris, nb, len(self._weights)
 
-            tris = 0
-            for part, verts, faces in parts:
-                handle = self.server.scene.add_mesh_simple(
-                    f"/{name}/{part}",
-                    vertices=verts,
-                    faces=faces,
-                    color=(200, 184, 168),
+    def _rebuild_scene(self) -> None:
+        """(Re)create scene nodes from current meshes + blend-shape weights.
+        Caller holds the lock."""
+        for node in self._nodes:
+            node.remove()
+        self._nodes.clear()
+        bones = getattr(self, "_bones", [])
+        bone_wxyzs = [b.wxyz for b in bones]
+        bone_pos = [b.position for b in bones]
+        for md in self._meshes:
+            verts = md.verts
+            if md.blendshapes:  # apply morph deltas CPU-side
+                verts = verts.copy()
+                for bn, deltas in md.blendshapes:
+                    w = self._weights.get(bn, 0.0)
+                    if w != 0.0:
+                        verts = verts + w * deltas
+            path = f"/{self.name}/{md.name}"
+            if md.skin is not None and bones:
+                h = self.server.scene.add_mesh_skinned(
+                    path, vertices=verts, faces=md.faces,
+                    bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
+                    skin_weights=md.skin, color=md.color, material="toon3",
                 )
-                self._nodes.append(handle)
-                tris += len(faces)
-        return f"{name}: {len(parts)} mesh(es), {tris} tris"
+            else:
+                h = self.server.scene.add_mesh_simple(
+                    path, vertices=verts, faces=md.faces, color=md.color,
+                )
+            self._nodes.append(h)
+
+    def set_blendshape(self, name: str, weight: float) -> None:
+        with self._lock:
+            self._weights[name] = weight
+            self._rebuild_scene()
+
+    @property
+    def blendshape_names(self) -> list[str]:
+        return list(self._weights.keys())
 
     def export_usda(self) -> tuple[str, bytes]:
-        """Re-author the live avatar to a .usda and return (filename, bytes)."""
         with self._lock:
             if self._avatar is None:
                 raise RuntimeError("nothing loaded to export")
@@ -146,41 +324,54 @@ def main() -> None:
     print(f"[idtx] libidtx_core {version}")
 
     server = viser.ViserServer()
-    # The USD declares upAxis = "Y" (metersPerUnit = 1), matching the rest of the
-    # lineup (Godot / glTF / three.js are all Y-up, right-handed). viser defaults
-    # to +Z up (Blender/ROS), which tips the avatar onto its back. Both frames are
-    # right-handed, so this is the whole correction — no mirroring needed.
+    # Whole lineup is Y-up right-handed (USD upAxis=Y, Godot, glTF, three.js);
+    # viser defaults to +Z up, so correct it once. No mirroring (both RH).
     server.scene.set_up_direction("+y")
 
     host = Host(lib, server)
     status = server.gui.add_text("Status", initial_value="loading…", disabled=True)
 
-    # --- Import: upload a USD from the browser and render it through the core ---
     import_btn = server.gui.add_upload_button(
-        "Import USD …",
-        icon=viser.Icon.UPLOAD,
-        mime_type=".usd,.usda,.usdc,.usdz",
-    )
+        "Import USD …", icon=viser.Icon.UPLOAD, mime_type=".usd,.usda,.usdc,.usdz")
+    export_btn = server.gui.add_button("Export OpenUSD", icon=viser.Icon.DOWNLOAD)
+    shapes_folder = server.gui.add_folder("Blend shapes")
+
+    def rebuild_blendshape_gui() -> None:
+        shapes_folder.remove()
+        new_folder = server.gui.add_folder("Blend shapes")
+        with new_folder:
+            names = host.blendshape_names
+            if not names:
+                server.gui.add_text("(none)", initial_value="", disabled=True)
+            for bn in names[:64]:  # cap the panel for very large rigs
+                sl = server.gui.add_slider(bn, min=0.0, max=1.0, step=0.01, initial_value=0.0)
+
+                @sl.on_update
+                def _(_e, _name=bn, _slider=sl) -> None:
+                    host.set_blendshape(_name, _slider.value)
+        return new_folder
+
+    def do_load(path: Path, label: str) -> None:
+        nonlocal shapes_folder
+        name, nmesh, tris, nb, nshapes = host.load(path)
+        status.value = f"{label}: {name} — {nmesh} mesh, {tris} tris, {nb} bones, {nshapes} shapes"
+        shapes_folder = rebuild_blendshape_gui()
+        print(f"[idtx] {status.value}")
 
     @import_btn.on_upload
     def _(_event) -> None:
-        uploaded = import_btn.value
-        suffix = Path(uploaded.name).suffix or ".usda"
+        up = import_btn.value
+        suffix = Path(up.name).suffix or ".usda"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(uploaded.content)
+            tmp.write(up.content)
             tmp_path = Path(tmp.name)
         try:
-            msg = host.load(tmp_path)
-            status.value = f"imported {uploaded.name} → {msg}"
-            print(f"[idtx] imported {uploaded.name}: {msg}")
-        except Exception as exc:  # surface to the panel instead of crashing
+            do_load(tmp_path, f"imported {up.name}")
+        except Exception as exc:
             status.value = f"import failed: {exc}"
             print(f"[idtx] import failed: {exc}")
         finally:
             tmp_path.unlink(missing_ok=True)
-
-    # --- Export: re-author the loaded avatar and download the .usda ----------
-    export_btn = server.gui.add_button("Export OpenUSD", icon=viser.Icon.DOWNLOAD)
 
     @export_btn.on_click
     def _(event) -> None:
@@ -188,16 +379,14 @@ def main() -> None:
             filename, data = host.export_usda()
             event.client.send_file_download(filename, data)
             status.value = f"exported {filename} ({len(data)} bytes)"
-            print(f"[idtx] exported {filename}: {len(data)} bytes")
+            print(f"[idtx] {status.value}")
         except Exception as exc:
             status.value = f"export failed: {exc}"
             print(f"[idtx] export failed: {exc}")
 
-    # Seed the scene with the default avatar if it is present.
     if USD_PATH.exists():
         try:
-            status.value = host.load(USD_PATH)
-            print(f"[idtx] loaded default {USD_PATH.name}: {status.value}")
+            do_load(USD_PATH, "loaded default")
         except Exception as exc:
             status.value = f"default load failed: {exc}"
             print(f"[idtx] {status.value}")
