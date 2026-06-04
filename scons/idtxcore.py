@@ -316,7 +316,11 @@ def _build_idtx_core(env, shared=True, static=True):
             # PXR_PLUGINPATH_NAME at Plugins/<arch>/usd.
             usd_plugin_src = f"{usd_root}/lib/usd"
             if os.path.isdir(usd_plugin_src):
-                dst_usd = os.path.join(unity_plugin_dir, "usd")
+                # "usd~" (trailing tilde) so Unity's AssetDatabase IGNORES the tree
+                # — otherwise it tries to import the OpenUSD schema *.usda files as
+                # assets via the idtx ScriptedImporter. OpenUSD reads it via the
+                # plain filesystem path on PXR_PLUGINPATH_NAME, tilde and all.
+                dst_usd = os.path.join(unity_plugin_dir, "usd~")
                 def _copy_usd_plugin_tree(target, source, env, _src=usd_plugin_src, _dst=dst_usd):
                     import shutil
                     shutil.copytree(_src, _dst, dirs_exist_ok=True)

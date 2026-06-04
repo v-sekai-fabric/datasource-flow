@@ -87,7 +87,9 @@ namespace IdtxCore.Editor
                 ? pkgInfo.resolvedPath
                 : Path.GetDirectoryName(typeof(IdtxCoreLoader).Assembly.Location);
             if (string.IsNullOrEmpty(root)) return null;
-            string candidate = Path.Combine(root, "Plugins", "x86_64", "usd");
+            // "usd~" — trailing tilde keeps Unity's AssetDatabase from importing the
+            // OpenUSD schema .usda files; OpenUSD reads the plain path regardless.
+            string candidate = Path.Combine(root, "Plugins", "x86_64", "usd~");
             return Directory.Exists(candidate) ? candidate : null;
         }
 
