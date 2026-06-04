@@ -381,6 +381,12 @@ def _copy_usd_plugins(target, source, env):
     # plugInfo so the core's USD dispatches those schemes to it.
     shutil.copytree("usd/plugin/idtx_resolver", "addons/IDTXFlow/bin/plugin/usd/idtx_resolver", dirs_exist_ok=True)
     shutil.copytree("usd/plugin/idtx", "addons/IDTXFlow/bin/plugin/usd/idtx", dirs_exist_ok=True)
+    # The codeless v_sekai:* schema (VSekaiMaterialAPI / VSekaiMToonAPI / spring
+    # bones). idtx_core_init registers the plugin/usd tree, whose top-level
+    # plugInfo Includes "*/resources/", so dropping the schema here lets applied
+    # API schemas resolve in the editor instead of silently degrading to opaque
+    # attributes.
+    shutil.copytree("openusd-fabric/schema", "addons/IDTXFlow/bin/plugin/usd/vSekaiUsd/resources", dirs_exist_ok=True)
 
 def _copy_third_party_licenses(target, source, env):
     """Copy third-party LICENSE files to addon for distribution compliance."""

@@ -40,10 +40,11 @@ void register_usd_plugins(const char* override_dir)
     if (override_dir != nullptr && override_dir[0] != '\0') {
         candidates.push_back(fs::path(override_dir));
     }
-    candidates.push_back(module_dir / "usd");                               // deployed plugin tree
-    candidates.push_back(module_dir / ".." / "plugin" / "usd" / "idtx_resolver" / "resources");
-    candidates.push_back(repo_root / "openusd-fabric" / "schema");          // codeless v_sekai schema
-    candidates.push_back(repo_root / "usd" / "plugin" / "idtx_resolver" / "resources");
+    candidates.push_back(module_dir / "usd");                  // Godot: OpenUSD core tree next to DLL
+    candidates.push_back(module_dir / "usd~");                 // Unity: AssetDatabase-ignored tree
+    candidates.push_back(module_dir / ".." / "plugin" / "usd"); // Godot: top-level Includes-globs resolver + vSekai
+    candidates.push_back(repo_root / "openusd-fabric" / "schema");          // standalone: codeless v_sekai schema
+    candidates.push_back(repo_root / "usd" / "plugin" / "idtx_resolver" / "resources");  // standalone: resolver
 
     std::vector<std::string> dirs;
     for (const fs::path& c : candidates) {

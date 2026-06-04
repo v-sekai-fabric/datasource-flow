@@ -329,6 +329,17 @@ def _build_idtx_core(env, shared=True, static=True):
                 def _copy_usd_plugin_tree(target, source, env, _src=usd_plugin_src, _dst=dst_usd):
                     import shutil
                     shutil.copytree(_src, _dst, dirs_exist_ok=True)
+                    # The OpenUSD core tree's top-level plugInfo Includes
+                    # "*/resources/", so drop the IdtxHostUriResolver and the
+                    # codeless v_sekai:* schema in beside it. Without these Unity
+                    # has no res:/user: resolver and applied API schemas
+                    # (VSekaiMaterialAPI / VSekaiMToonAPI / spring bones) silently
+                    # degrade to opaque attributes — the same gap idtx_core_init
+                    # closes for the other hosts.
+                    shutil.copytree("usd/plugin/idtx_resolver",
+                                    os.path.join(_dst, "idtx_resolver"), dirs_exist_ok=True)
+                    shutil.copytree("openusd-fabric/schema",
+                                    os.path.join(_dst, "vSekaiUsd", "resources"), dirs_exist_ok=True)
                 env.AddPostAction(unity_targets[0], _copy_usd_plugin_tree)
             for t in unity_targets:
                 env.Default(t)
