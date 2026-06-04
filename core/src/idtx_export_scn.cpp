@@ -27,6 +27,7 @@
 // hosts can still load libidtx_core without breaking.
 
 #include "idtx_core/idtx_core.h"
+#include "idtx_core/internal/usd_helpers.h"
 
 #include <cstring>
 
@@ -117,19 +118,20 @@ extern "C" IDTX_CORE_API void idtx_core_set_progress_cb(
 }
 
 // ---------------------------------------------------------------------
-// idtx_core_init — one-time setup. Prepends the shipped schema plugin
-// directory to PXR_PLUGINPATH_NAME so codeless v_sekai:* attributes
-// resolve in every host before any UsdStage::Open() call.
+// idtx_core_init — one-time setup. Registers the shipped USD plugins (the
+// IdtxHostUriResolver and the codeless v_sekai:* schema) with the process
+// PlugRegistry so applied API schemas and the res:/user: resolver resolve
+// in every host before any UsdStage::Open() call.
 //
-// Stubbed for now: real impl will resolve the shared lib's neighbour
-// `share/idtx_core/` (or honour the caller's override) and prepend it
-// via setenv("PXR_PLUGINPATH_NAME", ...). Returns 0 on success.
+// The plugin directories are resolved RELATIVE TO THE LOADED libidtx_core
+// MODULE at runtime (see register_usd_plugins), never an absolute build-time
+// path, so the library stays relocatable across hosts and machines. The
+// optional `plugin_dir` lets a caller name the directory explicitly.
+// Returns 0 on success.
 // ---------------------------------------------------------------------
 
-extern "C" IDTX_CORE_API int32_t idtx_core_init(const char* /*plugin_dir*/)
+extern "C" IDTX_CORE_API int32_t idtx_core_init(const char* plugin_dir)
 {
-    // TODO(ART-44 task #4): resolve schema dir and prepend to
-    // PXR_PLUGINPATH_NAME. For now, no-op success — the library still
-    // works, but v_sekai:* attrs are opaque.
+    idtx::core::register_usd_plugins(plugin_dir);
     return 0;
 }

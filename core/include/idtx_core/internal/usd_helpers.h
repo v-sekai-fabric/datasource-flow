@@ -36,6 +36,18 @@ pxr::SdfPath unique_child_path(
     std::string const& desired_name,
     std::set<std::string>& siblings_inout);
 
+// Register idtx-flow's shipped USD plugins (the IdtxHostUriResolver and the
+// codeless v_sekai:* schema) with the process PlugRegistry, so applied API
+// schemas (VSekaiMaterialAPI, VSekaiMToonAPI, ...) and the res:/user: URI
+// resolver resolve before any UsdStage::Open().
+//
+// All search dirs are derived RELATIVE TO THE LOADED libidtx_core MODULE at
+// runtime — never an absolute build-time path — so the library is relocatable
+// across hosts (build/idtx_core, Godot addons, Unity Plugins) and machines.
+// `override_dir` (may be null/empty) is honoured first when the caller knows
+// the plugin directory explicitly. Idempotent; safe to call more than once.
+void register_usd_plugins(const char* override_dir);
+
 }  // namespace idtx::core
 
 #endif  // IDTX_CORE_INTERNAL_USD_HELPERS_H

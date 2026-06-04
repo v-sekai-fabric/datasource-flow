@@ -8,6 +8,11 @@
                     "schemaPath": "./generatedSchema.usda"
                 },
                 "Types": {
+                    "VSekaiMaterialAPI": {
+                        "bases": ["UsdAPISchemaBase"],
+                        "schemaKind": "singleApplyAPI",
+                        "schemaIdentifier": "VSekaiMaterialAPI"
+                    },
                     "VSekaiMToonAPI": {
                         "bases": ["UsdAPISchemaBase"],
                         "schemaKind": "singleApplyAPI",

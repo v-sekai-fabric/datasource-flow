@@ -4,11 +4,57 @@
 #include "idtx_core/internal/usd_helpers.h"
 
 #include <pxr/base/tf/token.h>
+#include <pxr/base/arch/symbols.h>
+#include <pxr/base/plug/registry.h>
 
+#include <filesystem>
 #include <set>
 #include <sstream>
+#include <vector>
 
 namespace idtx::core {
+
+void register_usd_plugins(const char* override_dir)
+{
+    namespace fs = std::filesystem;
+
+    // Resolve THIS module's own path on disk. ArchGetAddressInfo maps the
+    // address of a symbol back to the shared object that defines it, so we get
+    // the libidtx_core DLL's location regardless of where the host loaded it
+    // from — no absolute build-time path is ever baked in.
+    std::string module_path;
+    if (!pxr::ArchGetAddressInfo(
+            reinterpret_cast<void*>(&register_usd_plugins), &module_path, nullptr, nullptr, nullptr)) {
+        return;
+    }
+
+    std::error_code ec;
+    const fs::path module_dir = fs::path(module_path).parent_path();
+    const fs::path repo_root  = module_dir.parent_path().parent_path();  // build/idtx_core -> repo
+
+    // Candidate plugin-resource directories, each holding a plugInfo.json.
+    // Listed relative to the module (deployed-next-to-DLL forms) and to the
+    // repo (the standalone build/idtx_core form). RegisterPlugins ignores any
+    // that do not exist, so it is safe to offer the full superset.
+    std::vector<fs::path> candidates;
+    if (override_dir != nullptr && override_dir[0] != '\0') {
+        candidates.push_back(fs::path(override_dir));
+    }
+    candidates.push_back(module_dir / "usd");                               // deployed plugin tree
+    candidates.push_back(module_dir / ".." / "plugin" / "usd" / "idtx_resolver" / "resources");
+    candidates.push_back(repo_root / "openusd-fabric" / "schema");          // codeless v_sekai schema
+    candidates.push_back(repo_root / "usd" / "plugin" / "idtx_resolver" / "resources");
+
+    std::vector<std::string> dirs;
+    for (const fs::path& c : candidates) {
+        if (fs::exists(c / "plugInfo.json", ec)) {
+            dirs.push_back(fs::weakly_canonical(c, ec).string());
+        }
+    }
+    if (!dirs.empty()) {
+        pxr::PlugRegistry::GetInstance().RegisterPlugins(dirs);
+    }
+}
 
 pxr::GfMatrix4d float16_to_gf_matrix(const float matrix[16])
 {
