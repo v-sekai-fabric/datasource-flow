@@ -284,11 +284,35 @@ def _build_idtx_core(env, shared=True, static=True):
         # doesn't exist under Unity's .NET Framework API level). Keeps the adapter
         # from ever binding a stale/missing binary. Skip for Emscripten/WASM.
         if platform_name != "web":
-            unity_dll = os.path.join("unity", "IdtxCore", "Plugins", build_arch,
-                                     f"idtx_core.{shared_extension}")
-            unity_deploy = env.InstallAs(unity_dll, shared_lib)
-            env.Default(unity_deploy)
-            targets.append(unity_deploy)
+            unity_plugin_dir = os.path.join("unity", "IdtxCore", "Plugins", build_arch)
+            # idtx_core under its plain logical name so [DllImport("idtx_core")]
+            # resolves it.
+            unity_targets = [env.InstallAs(
+                os.path.join(unity_plugin_dir, f"idtx_core.{shared_extension}"),
+                shared_lib)]
+            # Its runtime companions, beside it so the OS loader resolves them when
+            # Unity loads idtx_core (idtx_core -> usd_ms + libidtx_usd; usd_ms ->
+            # tbb12). Keep their ORIGINAL names — the import tables reference them.
+            usd_root = f"thirdparty/openusd-{env.get('openusd_version', '')}"
+            if platform_name == "windows":
+                companions = [f"{usd_root}/lib/usd_ms.dll",
+                              f"{usd_root}/bin/tbb12.dll",
+                              f"usd/libs/{platform_name}/libidtx_usd.dll"]
+            elif platform_name == "macos":
+                companions = [f"{usd_root}/lib/libusd_ms.dylib",
+                              f"usd/libs/{platform_name}/libidtx_usd.dylib"]
+            elif platform_name == "linux":
+                companions = [f"{usd_root}/lib/libusd_ms.so",
+                              f"{usd_root}/lib/libtbb12.so",
+                              f"usd/libs/{platform_name}/libidtx_usd.so"]
+            else:
+                companions = []
+            for c in companions:
+                if os.path.exists(c):
+                    unity_targets.append(env.Install(unity_plugin_dir, c))
+            for t in unity_targets:
+                env.Default(t)
+                targets.append(t)
 
     static_lib = None
     if static:
