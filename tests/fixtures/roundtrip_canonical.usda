@@ -1,0 +1,81 @@
+#usda 1.0
+# Curated round-trip fixture. Stays within the libidtx_core handle
+# model surface: avatar root + skeleton + one skinned mesh + one
+# material. Anything richer (composition arcs, material input
+# connections beyond UsdPreviewSurface, V-Sekai-namespace customData
+# on intermediate prims, multiple skeletons) goes in a separate
+# fixture so this one's usdcat --flatten round-trip diff stays at
+# 0 lines.
+(
+    defaultPrim = "Avatar"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Avatar" (
+    customData = {
+        string "vSekai:upgrade:fromVrm" = "1.0"
+    }
+)
+{
+    matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+    uniform token[] xformOpOrder = ["xformOp:transform"]
+
+    def SkelRoot "Skel_SkelRoot"
+    {
+        def Skeleton "Skeleton"
+        {
+            uniform matrix4d[] bindTransforms = [
+                ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) ),
+                ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1, 0, 1) ),
+            ]
+            uniform token[] joints = ["Root", "Root/Spine"]
+            uniform matrix4d[] restTransforms = [
+                ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) ),
+                ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1, 0, 1) ),
+            ]
+        }
+    }
+
+    def Mesh "Body" (
+        apiSchemas = ["MaterialBindingAPI", "SkelBindingAPI"]
+    )
+    {
+        rel material:binding = </Avatar/Body_Mat>
+        int[] faceVertexCounts = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+        int[] faceVertexIndices = [
+            0, 1, 2,    0, 2, 3,    4, 6, 5,    4, 7, 6,
+            0, 4, 5,    0, 5, 1,    2, 6, 7,    2, 7, 3,
+            0, 3, 7,    0, 7, 4,    1, 5, 6,    1, 6, 2,
+        ]
+        point3f[] points = [
+            (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5),
+            (-0.5, -0.5,  0.5), (0.5, -0.5,  0.5), (0.5, 0.5,  0.5), (-0.5, 0.5,  0.5),
+        ]
+        rel skel:skeleton = </Avatar/Skel_SkelRoot/Skeleton>
+        int[] primvars:skel:jointIndices = [0, 0, 0, 0, 0, 0, 0, 0] (
+            elementSize = 1
+            interpolation = "vertex"
+        )
+        float[] primvars:skel:jointWeights = [1, 1, 1, 1, 1, 1, 1, 1] (
+            elementSize = 1
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+    }
+
+    def Material "Body_Mat"
+    {
+        token outputs:surface.connect = </Avatar/Body_Mat/PreviewSurface.outputs:surface>
+
+        def Shader "PreviewSurface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (0.8, 0.7, 0.6)
+            float inputs:metallic = 0
+            float inputs:opacity = 1
+            float inputs:roughness = 0.5
+            token outputs:surface
+        }
+    }
+}

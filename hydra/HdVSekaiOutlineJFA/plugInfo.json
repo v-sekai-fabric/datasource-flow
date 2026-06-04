@@ -1,0 +1,18 @@
+{
+    "Plugins": [
+        {
+            "Name": "hdVSekaiOutlineJFA",
+            "Type": "library",
+            "LibraryPath": "../hdVSekaiOutlineJFA.dll",
+            "ResourcePath": ".",
+            "Info": {
+                "Types": {
+                    "HdVSekaiOutlineJFATask": {
+                        "bases": ["HdTask"],
+                        "displayName": "V-Sekai MToon Outline (JFA)"
+                    }
+                }
+            }
+        }
+    ]
+}

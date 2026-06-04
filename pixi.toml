@@ -1,0 +1,54 @@
+[workspace]
+name = "openusd-fabric"
+version = "0.1.0"
+description = "V-Sekai OpenUSD interchange pipeline"
+authors = ["The openusd-fabric authors"]
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+
+[dependencies]
+openusd = ">=25.05"
+cmake = ">=3.28"
+ninja = ">=1.11"
+python = "3.11.*"
+numpy = ">=1.26"
+hypothesis = ">=6.100"
+pytest = "*"
+
+[target.win-64.dependencies]
+vs2022_win-64 = "*"
+
+[target.linux-64.dependencies]
+gxx = ">=12"
+
+[target.osx-arm64.dependencies]
+cxx-compiler = "*"
+
+[tasks]
+# Slang -> GLSL: regenerates the GLSL strings embedded in the Hydra task
+# and the GDScript-loaded resources from shaders/outline_jfa/*.slang.
+# Requires slangc on PATH (download from https://github.com/shader-slang/slang/releases;
+# not on conda-forge yet). CI runs this + diffs against the embedded
+# bytes to catch drift between the .slang source-of-truth and the
+# shipped GLSL.
+emit-shader-glsl = { cmd = "python scripts/emit_shader_glsl.py", env = { OUTLINE_JFA_SRC = "shaders/outline_jfa", OUTLINE_JFA_OUT = "build/shaders/outline_jfa" } }
+configure-hydra-jfa = { cmd = "cmake -S hydra/HdVSekaiOutlineJFA -B hydra/HdVSekaiOutlineJFA/build -G Ninja -DCMAKE_BUILD_TYPE=Release" }
+build-hydra-jfa = { cmd = "cmake --build hydra/HdVSekaiOutlineJFA/build --config Release" }
+hydra-jfa = { depends-on = ["configure-hydra-jfa", "build-hydra-jfa"] }
+test-jfa = { cmd = "pytest tests/slang_validate/ -v" }
+test-hydra = { cmd = "pytest tests/hydra/ -v" }
+# Integration probe: download mesh-mille-mire-feuille (Apache-2.0,
+# ~30 MB Mire.blend), export to USD via Blender headless, run the
+# V-Sekai post-export hook. Blender must be on PATH or pointed at
+# via the BLENDER env var. Currently a negative-path test: Mire ships
+# without V-Sekai markers, so the hook should report 0 schema
+# applications. The committed tests/fixtures/mire_essence.usda is
+# the positive-path counterpart.
+fetch-mire = { cmd = "python scripts/fetch_mire.py" }
+# Hydra (hdStorm) render of the SCSS<->MToon comparison fixture.
+# Writes build/renders/hydra_scss_mtoon_compare.png. hdStorm renders the
+# UsdPreviewSurface proxy on each sphere; the VSekaiMToonAPI sidecar
+# attributes are visible to the importer but unrendered until a real
+# MToon Hydra delegate exists.
+render-hydra-compare = { cmd = "usdrecord --defaultTime --imageWidth 1024 tests/fixtures/compare_scss_mtoon.usda build/renders/hydra_scss_mtoon_compare.png", env = { PXR_PLUGINPATH_NAME = "schema" } }
+render-hydra-macbeth = { cmd = "usdrecord --defaultTime --imageWidth 1200 tests/fixtures/macbeth_colorchecker.usda build/renders/hydra_macbeth.png" }
