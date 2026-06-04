@@ -1,7 +1,7 @@
 """
 Shared runner for the Lean-emitted upgrade tables under maps/*.json.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Both scss_mtoon.py and the future shader-bridge modules use the same

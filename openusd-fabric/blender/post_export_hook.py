@@ -1,7 +1,7 @@
 """
 V-Sekai post-export hook for Blender's USD exporter.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Blender's native USD exporter does not apply custom API schemas, so this

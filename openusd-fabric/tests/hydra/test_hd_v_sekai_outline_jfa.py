@@ -2,7 +2,7 @@
 Smoke test: load the hdVSekaiOutlineJFA Hydra plugin and verify
 TfType registration plus discovery via PXR_PLUGINPATH_NAME.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Run via:

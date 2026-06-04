@@ -1,7 +1,7 @@
 """
 VRM 0.x -> 1.0 springbone field map (CHI-252).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 VRM 1.0 renamed `stiffinessForce` (the original 0.x spec's typo) to

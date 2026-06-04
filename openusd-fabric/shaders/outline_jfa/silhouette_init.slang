@@ -1,4 +1,4 @@
-// Copyright 2026 The openusd-fabric authors.
+// Copyright 2026 V-Sekai contributors.
 // SPDX-License-Identifier: MIT
 //
 // JFA outline pass 1 of 3: silhouette init.

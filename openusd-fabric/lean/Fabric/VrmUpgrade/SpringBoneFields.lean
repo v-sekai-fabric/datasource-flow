@@ -1,4 +1,4 @@
--- Copyright 2026 The openusd-fabric authors.
+-- Copyright 2026 V-Sekai contributors.
 -- SPDX-License-Identifier: MIT
 --
 -- VRM 0.x -> 1.0 springbone field map (CHI-252).

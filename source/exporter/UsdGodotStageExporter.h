@@ -1,4 +1,4 @@
-// Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+// Copyright 2026 V-Sekai contributors.
 // SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 //
 // UsdGodotStageExporter — thin Godot adapter. Walks a godot::Node3D

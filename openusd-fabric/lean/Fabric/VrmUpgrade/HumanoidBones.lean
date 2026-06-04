@@ -1,4 +1,4 @@
--- Copyright 2026 The openusd-fabric authors.
+-- Copyright 2026 V-Sekai contributors.
 -- SPDX-License-Identifier: MIT
 --
 -- VRM humanoid bone enumeration + 0.x <-> 1.0 mapping (CHI-252).

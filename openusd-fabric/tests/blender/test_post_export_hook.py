@@ -1,4 +1,4 @@
-# Copyright 2026 The openusd-fabric authors.
+# Copyright 2026 V-Sekai contributors.
 # SPDX-License-Identifier: MIT
 #
 # Tests for blender/post_export_hook.py. We don't need a real Blender

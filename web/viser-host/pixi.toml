@@ -2,7 +2,7 @@
 name = "idtx-viser-host"
 version = "0.1.0"
 description = "idtx-flow web host: viser (Python server) rendering libidtx_core geometry server-side, no WASM"
-authors = ["The openusd-fabric authors"]
+authors = ["V-Sekai contributors"]
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 

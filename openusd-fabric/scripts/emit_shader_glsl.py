@@ -1,7 +1,7 @@
 """
 Compile shaders/outline_jfa/*.slang to GLSL for the engine consumers.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Invokes `slangc` once per .slang source under $OUTLINE_JFA_SRC, writing

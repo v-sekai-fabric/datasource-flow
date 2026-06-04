@@ -1,7 +1,7 @@
 """
 Round-trip + property tests for the SCSS ↔ MToon bridge.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Verifies:

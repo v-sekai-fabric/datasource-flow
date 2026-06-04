@@ -1,7 +1,7 @@
 """
 Blender helper: import the Macbeth ColorChecker fixture with bindings.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Blender 4.x's USD importer (Blender's bundled USD 25.08, as of writing)

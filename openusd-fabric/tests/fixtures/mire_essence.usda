@@ -28,7 +28,7 @@
         match the schema defaults plus a per-material colour tweak so
         each material is distinguishable on inspection.
 
-    Copyright 2026 The openusd-fabric authors. (essence fixture)
+    Copyright 2026 V-Sekai contributors. (essence fixture)
     Mire model copyright 2024 Mohka / Kuro Insula, Apache-2.0.
     SPDX-License-Identifier: MIT
     """

@@ -1,7 +1,7 @@
 """
 JSON-schema validation for idtx_core's emitted .vrm files.
 
-Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Validates the `extensions.VRMC_vrm`, `extensions.VRMC_springBone`, and

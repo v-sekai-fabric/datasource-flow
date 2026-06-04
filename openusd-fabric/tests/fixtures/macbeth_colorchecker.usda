@@ -17,7 +17,7 @@
     not hand-edit — colour values and per-Material boilerplate live in
     that script.
 
-    Copyright 2026 The openusd-fabric authors.
+    Copyright 2026 V-Sekai contributors.
     SPDX-License-Identifier: MIT
     """
     defaultPrim = "Chart"

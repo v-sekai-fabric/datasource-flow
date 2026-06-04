@@ -1,4 +1,4 @@
--- Copyright 2026 The openusd-fabric authors.
+-- Copyright 2026 V-Sekai contributors.
 -- SPDX-License-Identifier: MIT
 --
 -- Bidirectional shader-parameter mapping between Silent's Cel Shading

@@ -1,7 +1,7 @@
 """
 Host-diff harness for the tris-to-quads GPU matching shader (CHI-253).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 The Lean spec emits `shaders/tris_to_quads_match.slang` via

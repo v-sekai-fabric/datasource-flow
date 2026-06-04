@@ -1,7 +1,7 @@
 """
 Cycle 1 gate: `lake build` succeeds under lean/.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Runs the Lean Lake build over the Fabric.* spec modules. Build success

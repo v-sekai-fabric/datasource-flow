@@ -1,7 +1,7 @@
 """
 CPU reference for the JFA outline shaders (CHI-255).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Mirrors the three Slang passes under shaders/outline_jfa/ in pure numpy

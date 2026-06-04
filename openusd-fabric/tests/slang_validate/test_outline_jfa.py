@@ -1,7 +1,7 @@
 """
 Pytest + Hypothesis tests for the JFA outline CPU reference (CHI-255).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Two layers of coverage:

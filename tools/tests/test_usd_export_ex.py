@@ -2,7 +2,7 @@
 TDD test for the layer-aware USD exporter idtx_core_export_avatar_to_usd_ex
 (ART idtx-flow #18 — round-trip / overlay / flatten export).
 
-Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 
 Style mirrors test_mesh_reconstruct_quads.py: load libidtx_core.dll via

@@ -1,7 +1,7 @@
 """
 End-to-end integration probe against V-Sekai's `Mille 'Mire' Feuille`.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Downloads (shallow-clones) the mesh-mille-mire-feuille repo, opens

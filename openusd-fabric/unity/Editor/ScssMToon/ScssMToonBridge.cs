@@ -1,4 +1,4 @@
-// Copyright 2026 The openusd-fabric authors.
+// Copyright 2026 V-Sekai contributors.
 // SPDX-License-Identifier: MIT
 //
 // Bidirectional SCSS <-> VRM 1.0 MToon parameter bridge for Unity.

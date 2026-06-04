@@ -19,7 +19,7 @@
     Used by `pixi run render-hydra-compare`; mirrored in Unity by the
     `Assets/_ScssMToonCompare.unity` scene the Unity-MCP script writes.
 
-    Copyright 2026 The openusd-fabric authors.
+    Copyright 2026 V-Sekai contributors.
     SPDX-License-Identifier: MIT
     """
     defaultPrim = "Scene"

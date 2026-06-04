@@ -21,7 +21,7 @@ The avatar IR builder needs bpy (runs inside Blender). The ctypes binding and
 the _ex driver do not — they are unit-tested headless against a synthetic
 avatar in tests/blender/test_idtx_core_export.py.
 
-Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 """
 

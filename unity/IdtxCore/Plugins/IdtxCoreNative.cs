@@ -1,4 +1,4 @@
-// Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+// Copyright 2026 V-Sekai contributors.
 // SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 //
 // Raw P/Invoke declarations for libidtx_core's C ABI.
@@ -23,10 +23,11 @@ namespace IdtxCore.Native
 {
     internal static class Lib
     {
-        // Logical name only. The shipped file is libidtx_core.<plat>.<arch>.<ext>
-        // (the basename every host dlopens), which does NOT match this name on
-        // disk — IdtxCoreLoader registers a NativeLibrary.SetDllImportResolver
-        // that maps "idtx_core" to the real per-platform file at runtime.
+        // Unity native-plugin logical name. The SCons build deploys the core as
+        // Plugins/<arch>/idtx_core.<ext> (see scons/idtxcore.py), so Unity's own
+        // plugin loader resolves [DllImport("idtx_core")] directly — the same
+        // pattern as MantisLOD. No custom resolver (Unity's .NET Framework API
+        // level lacks System.Runtime.InteropServices.NativeLibrary).
         internal const string DllName = "idtx_core";
     }
 

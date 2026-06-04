@@ -277,15 +277,16 @@ def _build_idtx_core(env, shared=True, static=True):
         shared_env.Default(shared_lib)
         targets.append(shared_lib)
 
-        # Deploy the freshly-built native lib into the Unity package so the
-        # P/Invoke loader (unity/IdtxCore/Plugins/IdtxCoreLoader.cs) always binds
-        # a CURRENT binary instead of a stale/missing one. Unity loads native
-        # plugins from a package's Plugins/<arch>/ folder; the file keeps its
-        # platform.arch name (libidtx_core.<plat>.<arch>.<ext>) that the loader
-        # resolves. Skip for Emscripten/WASM (no Unity host there).
+        # Deploy the freshly-built native lib into the Unity package as the plain
+        # logical name "idtx_core.<ext>", so Unity's native-plugin loader resolves
+        # the bindings' [DllImport("idtx_core")] directly — the same pattern as
+        # MantisLOD's MantisLOD.dll, with NO custom NativeLibrary resolver (which
+        # doesn't exist under Unity's .NET Framework API level). Keeps the adapter
+        # from ever binding a stale/missing binary. Skip for Emscripten/WASM.
         if platform_name != "web":
-            unity_plugin_dir = os.path.join("unity", "IdtxCore", "Plugins", build_arch)
-            unity_deploy = env.Install(unity_plugin_dir, shared_lib)
+            unity_dll = os.path.join("unity", "IdtxCore", "Plugins", build_arch,
+                                     f"idtx_core.{shared_extension}")
+            unity_deploy = env.InstallAs(unity_dll, shared_lib)
             env.Default(unity_deploy)
             targets.append(unity_deploy)
 

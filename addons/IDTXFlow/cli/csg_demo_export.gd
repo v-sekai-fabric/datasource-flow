@@ -1,5 +1,5 @@
 #!/usr/bin/env -S godot --headless --script
-# Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+# Copyright 2026 V-Sekai contributors.
 # SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 #
 # Build a small CSG-shape scene in-script, export via IDTXFlowExporter.

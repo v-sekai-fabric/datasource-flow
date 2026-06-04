@@ -1,7 +1,7 @@
 """
 VRM 0.x -> 1.0 humanoid bone map (CHI-252).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 The VRM humanoid bone enum is stable across 0.x and 1.0 — the spec

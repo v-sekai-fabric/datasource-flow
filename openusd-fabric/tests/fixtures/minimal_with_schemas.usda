@@ -11,7 +11,7 @@
     Geometry is intentionally trivial — the point is the schema payload,
     not the avatar.
 
-    Copyright 2026 The openusd-fabric authors.
+    Copyright 2026 V-Sekai contributors.
     SPDX-License-Identifier: MIT
     """
     defaultPrim = "Avatar"

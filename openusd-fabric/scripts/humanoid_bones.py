@@ -1,7 +1,7 @@
 """
 VRM humanoid bone enum + 0.x <-> 1.0 mapping (CHI-252).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Loads maps/humanoid_bones_map.json (emitted by

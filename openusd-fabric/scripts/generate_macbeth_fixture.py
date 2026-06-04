@@ -3,7 +3,7 @@ Regenerate tests/fixtures/macbeth_colorchecker.usda from the 24-patch
 reference values. Saves a lot of hand-editing when the Material schema
 shifts (e.g. adding MaterialX alongside UsdPreviewSurface).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 """
 
@@ -77,7 +77,7 @@ HEADER = '''#usda 1.0
     not hand-edit — colour values and per-Material boilerplate live in
     that script.
 
-    Copyright 2026 The openusd-fabric authors.
+    Copyright 2026 V-Sekai contributors.
     SPDX-License-Identifier: MIT
     """
     defaultPrim = "Chart"

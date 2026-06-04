@@ -1,7 +1,7 @@
 """
 V-Sekai pre-export RNA → id_property mirror for Blender's USD exporter.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 The companion to blender/post_export_hook.py. Blender's USD exporter

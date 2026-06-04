@@ -1,7 +1,7 @@
 """
 Runtime validator for the V-Sekai codeless USD plugin.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Opens a fixture stage with PXR_PLUGINPATH_NAME pointing at schema/ and

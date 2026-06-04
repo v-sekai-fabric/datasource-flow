@@ -1,7 +1,7 @@
 """
 VRM 0.x <-> 1.0 springbone field rename + clamp (CHI-252).
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Loads maps/springbone_fields_map.json (emitted by

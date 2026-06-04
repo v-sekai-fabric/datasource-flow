@@ -1,7 +1,7 @@
 """
 Bidirectional SCSS ↔ VRM 1.0 MToon parameter bridge.
 
-Copyright 2026 The openusd-fabric authors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: MIT
 
 Consumes maps/scss_mtoon_map.json (the canonical mapping table) and

@@ -7,7 +7,7 @@ OVERLAY / LAYER_ONLY / FLATTEN through openusd_fabric.blender.idtx_core_export.
 This proves the Blender hook's core-driving path end-to-end; the bpy avatar
 builder (build_avatar_from_scene) is covered separately inside Blender.
 
-Copyright 2026 The openusd-fabric authors / V-Sekai contributors.
+Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 """
 

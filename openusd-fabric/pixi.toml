@@ -2,7 +2,7 @@
 name = "openusd-fabric"
 version = "0.1.0"
 description = "V-Sekai OpenUSD interchange pipeline"
-authors = ["The openusd-fabric authors"]
+authors = ["V-Sekai contributors"]
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
