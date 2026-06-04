@@ -110,11 +110,10 @@ Ref<Texture2D> load_scene_texture(idtx_scene_t* scene, const char* key) {
 // or a mesh with no bound material), falls back to its display color (constant
 // interp -> albedo, else vertex-color). Texture maps from the material's image
 // paths are a follow-up (needs usdz asset extraction).
-Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
+Ref<StandardMaterial3D> build_material_index(idtx_scene_t* scene, idtx_node_t* node, int32_t mi) {
     Ref<StandardMaterial3D> mat;
     mat.instantiate();
 
-    const int32_t mi = idtx_node_get_material_index(node);
     const idtx_material_t* m = (mi >= 0) ? idtx_scene_get_material(scene, mi) : nullptr;
     if (m) {
         float rgba[4];
@@ -162,6 +161,11 @@ Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
         mat->set_flag(BaseMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
     }
     return mat;
+}
+
+// Material for a node's own bound material (the single-material path).
+Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
+    return build_material_index(scene, node, idtx_node_get_material_index(node));
 }
 
 // idtx_mesh -> Godot ArrayMesh (single surface; subsets were merged in-core).
@@ -431,15 +435,22 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
             // deformation: build_array_mesh emits per-vertex bone/weight arrays, the
             // MeshInstance points at this Skeleton3D (via _notification on parenting),
             // and a Skin derived from the bone rests maps mesh space -> bone space.
-            if (idtx_mesh_t* sm = idtx_node_get_skinned_mesh(node)) {
+            // One skinned MeshInstance per source skin target, each with its own
+            // material (the converter keeps them separate so the authored
+            // materials survive). idtx_node_get_skinned_mesh is [0].
+            const int32_t smc = idtx_node_get_skinned_mesh_count(node);
+            for (int32_t si = 0; si < smc; ++si) {
+                idtx_mesh_t* sm = idtx_node_get_skinned_mesh_at(node, si);
+                if (!sm) { continue; }
                 Ref<ArrayMesh> mesh = build_array_mesh(sm);
                 if (mesh->get_surface_count() > 0) {
-                    mesh->surface_set_material(0, build_material(scene, node));
+                    mesh->surface_set_material(
+                        0, build_material_index(scene, node, idtx_node_get_skinned_mesh_material(node, si)));
                     auto* mi = memnew(UsdMeshInstanceNode3D);
                     mi->set_mesh(mesh);
                     apply_blend_shape_weights(mi, sm);
                     mi->set_skeleton(sk);
-                    mi->set_name("Skin");
+                    mi->set_name(smc > 1 ? (String("Skin_") + String::num_int64(si)) : String("Skin"));
                     sk->add_child(mi, true);
                     mi->set_skin(sk->create_skin_from_rest_transforms());
                 }
