@@ -13,10 +13,15 @@
 
 #include "idtx_core/idtx_scene.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/ar/asset.h>
+#include <pxr/usd/ar/resolver.h>
+#include <pxr/usd/ar/resolvedPath.h>
+#include <pxr/usd/ar/resolverContextBinder.h>
 
 #include "scene/FlatTreeTarget.h"
 #include "scene/FlatTreeTypeConverter.h"
@@ -74,6 +79,41 @@ idtx_mesh_t* finalize_mesh(const S::FMeshData& md) {
     return mesh;
 }
 
+// Read each material's base-color/normal texture bytes out of the stage's asset
+// resolver (usdz members included) into the scene texture table, keyed by the
+// same path the material carries. Deduplicates by key.
+void extract_textures(S::FlatScene& fs, const pxr::UsdStageRefPtr& stage) {
+    pxr::ArResolverContextBinder binder(stage->GetPathResolverContext());
+    pxr::ArResolver& resolver = pxr::ArGetResolver();
+
+    auto pull = [&](const char* key) {
+        if (!key || !*key) return;
+        for (const auto& t : fs.textures) {
+            if (t.name == key) return;   // already pulled
+        }
+        pxr::ArResolvedPath rp(key);
+        std::shared_ptr<pxr::ArAsset> asset = resolver.OpenAsset(rp);
+        if (!asset) {
+            rp = resolver.Resolve(key);
+            if (rp) asset = resolver.OpenAsset(rp);
+        }
+        if (!asset) return;
+        const size_t sz = asset->GetSize();
+        std::shared_ptr<const char> buf = asset->GetBuffer();
+        if (!buf || sz == 0) return;
+        S::FTexture tex;
+        tex.name = key;
+        tex.bytes.assign(reinterpret_cast<const uint8_t*>(buf.get()),
+                         reinterpret_cast<const uint8_t*>(buf.get()) + sz);
+        fs.textures.push_back(std::move(tex));
+    };
+
+    for (idtx_material_t* m : fs.materials) {
+        pull(idtx_material_get_base_color_texture(m));
+        pull(idtx_material_get_normal_texture(m));
+    }
+}
+
 }  // namespace
 
 extern "C" {
@@ -93,6 +133,11 @@ IDTX_CORE_API idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri) {
         if (n->kind == IDTX_NODE_MESH)          n->mesh = finalize_mesh(n->mesh_data);
         else if (n->kind == IDTX_NODE_SKELETON) n->skinned_mesh = finalize_mesh(n->mesh_data);
     }
+
+    // Extract referenced texture bytes while the stage (and its asset resolver
+    // context) is still open — this is where usdz-internal members resolve. The
+    // host loads these raw bytes; it never has to open the usdz package itself.
+    extract_textures(scene->fs, stage);
     return scene;
 }
 
@@ -145,6 +190,29 @@ IDTX_CORE_API int32_t idtx_scene_get_material_count(const idtx_scene_t* s) {
 IDTX_CORE_API idtx_material_t* idtx_scene_get_material(const idtx_scene_t* s, int32_t i) {
     if (!s || i < 0 || i >= static_cast<int32_t>(s->fs.materials.size())) return nullptr;
     return s->fs.materials[i];
+}
+
+// ---- texture table (raw encoded image bytes, keyed by material path) ----
+static inline const S::FTexture* as_texture(const idtx_texture_t* t) {
+    return reinterpret_cast<const S::FTexture*>(t);
+}
+IDTX_CORE_API int32_t idtx_scene_get_texture_count(const idtx_scene_t* s) {
+    return s ? static_cast<int32_t>(s->fs.textures.size()) : 0;
+}
+IDTX_CORE_API idtx_texture_t* idtx_scene_get_texture(const idtx_scene_t* s, int32_t i) {
+    if (!s || i < 0 || i >= static_cast<int32_t>(s->fs.textures.size())) return nullptr;
+    return reinterpret_cast<idtx_texture_t*>(const_cast<S::FTexture*>(&s->fs.textures[i]));
+}
+IDTX_CORE_API const char* idtx_texture_get_name(const idtx_texture_t* t) {
+    return t ? as_texture(t)->name.c_str() : "";
+}
+IDTX_CORE_API int32_t idtx_texture_get_byte_count(const idtx_texture_t* t) {
+    return t ? static_cast<int32_t>(as_texture(t)->bytes.size()) : 0;
+}
+IDTX_CORE_API void idtx_texture_get_bytes(const idtx_texture_t* t, uint8_t* out_bytes) {
+    if (!t || !out_bytes) return;
+    const auto& b = as_texture(t)->bytes;
+    for (size_t i = 0; i < b.size(); ++i) out_bytes[i] = b[i];
 }
 
 // ---- per-kind payload ----

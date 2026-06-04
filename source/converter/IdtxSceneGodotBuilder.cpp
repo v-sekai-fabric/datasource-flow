@@ -17,6 +17,8 @@
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/skin.hpp>
 #include <godot_cpp/classes/animation.hpp>
+#include <godot_cpp/classes/image.hpp>
+#include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/core/math.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -58,6 +60,50 @@ String leaf_bone_name(const char* usd_name) {
     return s.replace(":", "_");
 }
 
+// Look up a scene texture by its path key and decode its raw bytes into a Godot
+// texture. Format is chosen by file extension, with a jpg/png fallback for the
+// usdz-resolved keys whose extension is ambiguous. Returns null if absent/bad.
+Ref<Texture2D> load_scene_texture(idtx_scene_t* scene, const char* key) {
+    if (!key || !*key) {
+        return Ref<Texture2D>();
+    }
+    const int32_t n = idtx_scene_get_texture_count(scene);
+    for (int32_t i = 0; i < n; ++i) {
+        idtx_texture_t* t = idtx_scene_get_texture(scene, i);
+        if (String(idtx_texture_get_name(t)) != String(key)) {
+            continue;
+        }
+        const int32_t bc = idtx_texture_get_byte_count(t);
+        if (bc <= 0) {
+            return Ref<Texture2D>();
+        }
+        PackedByteArray buf;
+        buf.resize(bc);
+        idtx_texture_get_bytes(t, buf.ptrw());
+        Ref<Image> img;
+        img.instantiate();
+        const String lower = String(key).to_lower();
+        Error e = ERR_UNAVAILABLE;
+        if (lower.ends_with(".png")) {
+            e = img->load_png_from_buffer(buf);
+        } else if (lower.ends_with(".webp")) {
+            e = img->load_webp_from_buffer(buf);
+        } else if (lower.ends_with(".jpg") || lower.ends_with(".jpeg")) {
+            e = img->load_jpg_from_buffer(buf);
+        } else {
+            e = img->load_jpg_from_buffer(buf);
+            if (e != OK) {
+                e = img->load_png_from_buffer(buf);
+            }
+        }
+        if (e != OK) {
+            return Ref<Texture2D>();
+        }
+        return ImageTexture::create_from_image(img);
+    }
+    return Ref<Texture2D>();
+}
+
 // Build the Godot material for a node — the single material path for the whole
 // builder. Prefers the node's bound idtx_material (UsdPreviewSurface base color /
 // metallic / roughness, converted in-core); when the node has none (primitives,
@@ -77,6 +123,14 @@ Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
         mat->set_albedo(albedo);
         mat->set_metallic(idtx_material_get_metallic(m));
         mat->set_roughness(idtx_material_get_roughness(m));
+        // Texture maps extracted in-core from the (possibly usdz-packed) stage.
+        if (Ref<Texture2D> albedo_tex = load_scene_texture(scene, idtx_material_get_base_color_texture(m)); albedo_tex.is_valid()) {
+            mat->set_texture(BaseMaterial3D::TEXTURE_ALBEDO, albedo_tex);
+        }
+        if (Ref<Texture2D> normal_tex = load_scene_texture(scene, idtx_material_get_normal_texture(m)); normal_tex.is_valid()) {
+            mat->set_feature(BaseMaterial3D::FEATURE_NORMAL_MAPPING, true);
+            mat->set_texture(BaseMaterial3D::TEXTURE_NORMAL, normal_tex);
+        }
         switch (idtx_material_get_alpha_mode(m)) {
             case IDTX_ALPHA_MASK: {
                 mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA_SCISSOR);

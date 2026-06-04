@@ -31,6 +31,7 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/usdShade/connectableAPI.h>
 #include <pxr/usd/usdSkel/bindingAPI.h>
 #include <pxr/usd/usdSkel/skeleton.h>
 
@@ -360,6 +361,25 @@ static pxr::UsdShadeShader find_preview_surface(pxr::UsdShadeMaterial const& mat
     return pxr::UsdShadeShader();
 }
 
+// If `inp` is driven by a UsdUVTexture, return that texture's `file` asset path
+// (resolved when the stage resolved it, else the authored path); empty otherwise.
+// The host reads the actual bytes from the scene texture table — see idtx_scene.
+static std::string connected_texture_path(pxr::UsdShadeInput const& inp)
+{
+    pxr::UsdShadeConnectableAPI src;
+    pxr::TfToken srcName;
+    pxr::UsdShadeAttributeType srcType;
+    if (!inp || !inp.GetConnectedSource(&src, &srcName, &srcType)) return {};
+    pxr::UsdShadeShader tex(src.GetPrim());
+    if (!tex) return {};
+    auto fileInp = tex.GetInput(pxr::TfToken("file"));
+    if (!fileInp) return {};
+    pxr::SdfAssetPath asset;
+    if (!fileInp.Get(&asset)) return {};
+    const std::string resolved = asset.GetResolvedPath();
+    return resolved.empty() ? asset.GetAssetPath() : resolved;
+}
+
 // Read a UsdShadeMaterial -> idtx_material_t. Always succeeds (returns
 // at minimum a defaulted handle) so the path-to-index map stays in
 // sync with the avatar's material list.
@@ -374,8 +394,14 @@ idtx_material_t* read_material(pxr::UsdPrim const& prim)
         float opacity = 1.0f;
         float metallic = 0.0f;
         float roughness = 0.5f;
-        if (auto inp = shader.GetInput(pxr::TfToken("diffuseColor")))
-            inp.Get(&diffuse);
+        if (auto inp = shader.GetInput(pxr::TfToken("diffuseColor"))) {
+            // A texture-driven base color leaves diffuse at its fallback (often
+            // white); capture the texture path so the host can load the image.
+            if (std::string tex = connected_texture_path(inp); !tex.empty())
+                idtx_material_set_base_color_texture(out, tex.c_str());
+            else
+                inp.Get(&diffuse);
+        }
         if (auto inp = shader.GetInput(pxr::TfToken("opacity")))
             inp.Get(&opacity);
         if (auto inp = shader.GetInput(pxr::TfToken("metallic")))
@@ -385,6 +411,10 @@ idtx_material_t* read_material(pxr::UsdPrim const& prim)
         idtx_material_set_base_color(out, diffuse[0], diffuse[1], diffuse[2], opacity);
         idtx_material_set_metallic(out, metallic);
         idtx_material_set_roughness(out, roughness);
+        if (auto inp = shader.GetInput(pxr::TfToken("normal"))) {
+            if (std::string tex = connected_texture_path(inp); !tex.empty())
+                idtx_material_set_normal_texture(out, tex.c_str());
+        }
     }
 
     // MToon overlay if VSekaiMToonAPI is applied on the material prim.

@@ -61,9 +61,10 @@ extern "C" {
 // Opaque handles. A scene OWNS its nodes (and the mesh/skeleton handles they
 // expose); destroying the scene frees everything. Node/mesh/skeleton pointers
 // returned below are borrowed — valid until idtx_core_scene_destroy().
-typedef struct idtx_scene idtx_scene_t;
-typedef struct idtx_node  idtx_node_t;
-typedef struct idtx_anim  idtx_anim_t;   // a skeleton's animation clip (borrowed)
+typedef struct idtx_scene   idtx_scene_t;
+typedef struct idtx_node    idtx_node_t;
+typedef struct idtx_anim    idtx_anim_t;     // a skeleton's animation clip (borrowed)
+typedef struct idtx_texture idtx_texture_t;  // raw encoded image bytes (borrowed)
 
 // One kind per ConvertXxx hook in the converter. A host switch()es on this to
 // decide which native entity to build and which payload getters to call.
@@ -158,6 +159,17 @@ IDTX_CORE_API idtx_color_interp_t idtx_node_get_color_interpolation(const idtx_n
 // Scene-wide material table (mesh/primitive nodes index into this).
 IDTX_CORE_API int32_t          idtx_scene_get_material_count(const idtx_scene_t* scene);
 IDTX_CORE_API idtx_material_t* idtx_scene_get_material(const idtx_scene_t* scene, int32_t index);
+
+// Scene-wide texture table — raw ENCODED image bytes (jpg/png/...) the core
+// pulled from the stage's asset resolver, including usdz-internal members, so
+// the host never opens the usdz package itself. A material references one by the
+// path string from idtx_material_get_base_color_texture / _normal_texture; match
+// it against idtx_texture_get_name. The host decodes by file extension.
+IDTX_CORE_API int32_t          idtx_scene_get_texture_count(const idtx_scene_t* scene);
+IDTX_CORE_API idtx_texture_t*  idtx_scene_get_texture(const idtx_scene_t* scene, int32_t index);
+IDTX_CORE_API const char*      idtx_texture_get_name(const idtx_texture_t* tex);     // path key
+IDTX_CORE_API int32_t          idtx_texture_get_byte_count(const idtx_texture_t* tex);
+IDTX_CORE_API void             idtx_texture_get_bytes(const idtx_texture_t* tex, uint8_t* out_bytes);
 
 // ---------------------------------------------------------------------
 // Per-kind payload. Each getter is valid ONLY when idtx_node_get_kind() is the

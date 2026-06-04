@@ -120,11 +120,21 @@ struct FlatNode {
     bool        enabled = false, highlightable = false;
 };
 
+// A decoded-on-the-host image referenced by a material (base color / normal).
+// The core extracts the raw encoded bytes (jpg/png/...) from the stage's asset
+// resolver — including usdz-internal members — so the host never parses usdz.
+// `name` is the material's texture path key (idtx_material_get_base_color_texture).
+struct FTexture {
+    std::string          name;
+    std::vector<uint8_t> bytes;   // raw encoded image (host decodes by extension)
+};
+
 // OwningEntity / scene builder. Owns every FlatNode + the scene-wide material
 // table, and carries the stage metadata recorded by ConvertStagePostProcess.
 struct FlatScene {
     std::vector<std::unique_ptr<FlatNode>> nodes;
     std::vector<idtx_material_t*>          materials;   // owned
+    std::vector<FTexture>                  textures;    // referenced by material path key
     idtx_axis_t up_axis = IDTX_AXIS_Y;
     double      meters_per_unit = 0.01;
 
