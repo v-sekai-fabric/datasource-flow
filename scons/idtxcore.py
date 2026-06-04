@@ -277,6 +277,18 @@ def _build_idtx_core(env, shared=True, static=True):
         shared_env.Default(shared_lib)
         targets.append(shared_lib)
 
+        # Deploy the freshly-built native lib into the Unity package so the
+        # P/Invoke loader (unity/IdtxCore/Plugins/IdtxCoreLoader.cs) always binds
+        # a CURRENT binary instead of a stale/missing one. Unity loads native
+        # plugins from a package's Plugins/<arch>/ folder; the file keeps its
+        # platform.arch name (libidtx_core.<plat>.<arch>.<ext>) that the loader
+        # resolves. Skip for Emscripten/WASM (no Unity host there).
+        if platform_name != "web":
+            unity_plugin_dir = os.path.join("unity", "IdtxCore", "Plugins", build_arch)
+            unity_deploy = env.Install(unity_plugin_dir, shared_lib)
+            env.Default(unity_deploy)
+            targets.append(unity_deploy)
+
     static_lib = None
     if static:
         static_env = _common_env(env, building_dll=False, static=True)
