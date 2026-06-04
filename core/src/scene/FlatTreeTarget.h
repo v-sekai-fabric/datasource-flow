@@ -63,6 +63,25 @@ struct FMeshData {
     std::vector<float>   Weights;
 };
 
+// Skeletal animation, flattened from the converter's AnimationDescription. One
+// track per (joint, channel); each channel is keyed by time. Rotation keys live
+// in quat_keys, translation/scale keys in vec3_keys (parallel to `times`). The
+// host (idtx_scene.cpp -> idtx_anim getters) reads these to build its own clip.
+enum class FAnimTrackType { Translation, Rotation, Scale };
+
+struct FAnimTrack {
+    std::string         bone_name;   // USD joint name (matches a skeleton bone)
+    FAnimTrackType      type = FAnimTrackType::Translation;
+    std::vector<double> times;
+    std::vector<FVec3>  vec3_keys;   // Translation / Scale
+    std::vector<FQuat>  quat_keys;   // Rotation
+};
+
+struct FAnimation {
+    float                   length = 0.0f;   // seconds (max key time)
+    std::vector<FAnimTrack> tracks;
+};
+
 // One converted prim. ConvertedEntity in the TargetEngine contract; the scene
 // owns these (heap-allocated so pointers stay stable as the tree grows, unlike
 // indices into a reallocating vector). Per-kind payload is a flat superset —
@@ -88,6 +107,9 @@ struct FlatNode {
     idtx_skeleton_t* skeleton = nullptr;
     idtx_mesh_t*     skinned_mesh = nullptr;
     FMeshData        mesh_data;        // staging; converted to `mesh` at finalize
+
+    // skeletal animation (SKELETON kind); null when the skeleton has no clip.
+    std::unique_ptr<FAnimation> animation;
 
     // collision / collision-root
     idtx_collision_shape_t collision_shape = IDTX_COLLISION_SHAPE_UNKNOWN;

@@ -160,6 +160,67 @@ IDTX_CORE_API idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* n) { return as_
 IDTX_CORE_API idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* n) { return as_node(n)->skeleton; }
 IDTX_CORE_API idtx_mesh_t* idtx_node_get_skinned_mesh(const idtx_node_t* n) { return as_node(n)->skinned_mesh; }
 
+// ---- skeletal animation ----
+// idtx_anim_t* is a borrowed FAnimation* (owned by its FlatNode / the scene).
+static inline const S::FAnimation* as_anim(const idtx_anim_t* a) {
+    return reinterpret_cast<const S::FAnimation*>(a);
+}
+static inline const S::FAnimTrack* anim_track(const idtx_anim_t* a, int32_t t) {
+    const S::FAnimation* fa = as_anim(a);
+    if (!fa || t < 0 || t >= static_cast<int32_t>(fa->tracks.size())) return nullptr;
+    return &fa->tracks[t];
+}
+
+IDTX_CORE_API idtx_anim_t* idtx_node_get_animation(const idtx_node_t* n) {
+    const S::FAnimation* a = as_node(n)->animation.get();
+    return reinterpret_cast<idtx_anim_t*>(const_cast<S::FAnimation*>(a));
+}
+IDTX_CORE_API float idtx_anim_get_length(const idtx_anim_t* a) {
+    return a ? as_anim(a)->length : 0.0f;
+}
+IDTX_CORE_API int32_t idtx_anim_get_track_count(const idtx_anim_t* a) {
+    return a ? static_cast<int32_t>(as_anim(a)->tracks.size()) : 0;
+}
+IDTX_CORE_API const char* idtx_anim_track_get_bone_name(const idtx_anim_t* a, int32_t t) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    return tr ? tr->bone_name.c_str() : "";
+}
+IDTX_CORE_API idtx_anim_track_type_t idtx_anim_track_get_type(const idtx_anim_t* a, int32_t t) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    if (!tr) return IDTX_ANIM_TRACK_TRANSLATION;
+    switch (tr->type) {
+        case S::FAnimTrackType::Rotation: return IDTX_ANIM_TRACK_ROTATION;
+        case S::FAnimTrackType::Scale:    return IDTX_ANIM_TRACK_SCALE;
+        default:                          return IDTX_ANIM_TRACK_TRANSLATION;
+    }
+}
+IDTX_CORE_API int32_t idtx_anim_track_get_key_count(const idtx_anim_t* a, int32_t t) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    return tr ? static_cast<int32_t>(tr->times.size()) : 0;
+}
+IDTX_CORE_API double idtx_anim_track_get_key_time(const idtx_anim_t* a, int32_t t, int32_t k) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    if (!tr || k < 0 || k >= static_cast<int32_t>(tr->times.size())) return 0.0;
+    return tr->times[k];
+}
+IDTX_CORE_API void idtx_anim_track_get_key_vec3(const idtx_anim_t* a, int32_t t, int32_t k, float out_xyz[3]) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    if (!tr || k < 0 || k >= static_cast<int32_t>(tr->vec3_keys.size())) {
+        out_xyz[0] = out_xyz[1] = out_xyz[2] = 0.0f;
+        return;
+    }
+    out_xyz[0] = tr->vec3_keys[k].x; out_xyz[1] = tr->vec3_keys[k].y; out_xyz[2] = tr->vec3_keys[k].z;
+}
+IDTX_CORE_API void idtx_anim_track_get_key_quat(const idtx_anim_t* a, int32_t t, int32_t k, float out_xyzw[4]) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    if (!tr || k < 0 || k >= static_cast<int32_t>(tr->quat_keys.size())) {
+        out_xyzw[0] = out_xyzw[1] = out_xyzw[2] = 0.0f; out_xyzw[3] = 1.0f;
+        return;
+    }
+    out_xyzw[0] = tr->quat_keys[k].x; out_xyzw[1] = tr->quat_keys[k].y;
+    out_xyzw[2] = tr->quat_keys[k].z; out_xyzw[3] = tr->quat_keys[k].w;
+}
+
 IDTX_CORE_API void idtx_node_get_collision(const idtx_node_t* n, idtx_collision_shape_t* shape,
                                            idtx_axis_t* axis, double* height, double* radius) {
     const auto* p = as_node(n);

@@ -99,6 +99,56 @@ inline void merge_mesh(idtx::core::scene::FMeshData& dst, const idtx::core::scen
 using FT = idtxflow::types::TargetEngineFlatTree;
 namespace SC = idtx::core::scene;
 
+namespace flat_detail {
+
+// Flatten the converter's AnimationDescription into the FlatNode representation.
+// Rotation keys -> quat_keys, translation/scale -> vec3_keys (parallel to times).
+// Returns null when there are no usable tracks. The clip length is the max key
+// time (the upstream AnimationDescription::Length is left unset for skel clips).
+inline std::unique_ptr<SC::FAnimation> to_flat_animation(const AnimationDescription<FT>& src) {
+    auto out = std::make_unique<SC::FAnimation>();
+    double max_time = 0.0;
+    for (const auto& t : src.Tracks) {
+        SC::FAnimTrack track;
+        track.bone_name = t.Name;
+        switch (t.Type) {
+            case TRACK_POSITION: {
+                track.type = SC::FAnimTrackType::Translation;
+            } break;
+            case TRACK_ROTATION: {
+                track.type = SC::FAnimTrackType::Rotation;
+            } break;
+            case TRACK_SCALE: {
+                track.type = SC::FAnimTrackType::Scale;
+            } break;
+            default: {
+                continue;  // TRACK_TRANSFORM is not used for skeletons
+            }
+        }
+        for (const auto& key : t.Keys) {
+            track.times.push_back(key.Time);
+            if (key.Time > max_time) {
+                max_time = key.Time;
+            }
+            if (track.type == SC::FAnimTrackType::Rotation) {
+                track.quat_keys.push_back(std::get<SC::FQuat>(key.Value));
+            } else {
+                track.vec3_keys.push_back(std::get<SC::FVec3>(key.Value));
+            }
+        }
+        if (!track.times.empty()) {
+            out->tracks.push_back(std::move(track));
+        }
+    }
+    if (out->tracks.empty()) {
+        return nullptr;
+    }
+    out->length = static_cast<float>(max_time);
+    return out;
+}
+
+}  // namespace flat_detail
+
 template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertXform(
     const SC::FTransform& transform,
     const std::optional<AnimationDescription<FT>>& /*animation*/) {
@@ -182,11 +232,14 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertMesh(
 }
 
 template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
-    const SC::FTransform& transform, const std::optional<AnimationDescription<FT>>&,
+    const SC::FTransform& transform, const std::optional<AnimationDescription<FT>>& anim,
     const SkeletonDescription<FT>& skel) {
     SC::FlatNode* n = OwningEntity->make_node();
     n->kind = IDTX_NODE_SKELETON; n->local_transform = transform;
     n->skeleton = idtx_skeleton_create();
+    if (anim && !anim->Tracks.empty()) {
+        n->animation = flat_detail::to_flat_animation(*anim);
+    }
     for (const auto& bone : skel.Bones)
         idtx_skeleton_add_bone(n->skeleton, bone.Name.c_str(), bone.parentIndex,
                                bone.restTransform.m, bone.bindPose.m);

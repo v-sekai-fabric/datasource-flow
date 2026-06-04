@@ -63,6 +63,7 @@ extern "C" {
 // returned below are borrowed — valid until idtx_core_scene_destroy().
 typedef struct idtx_scene idtx_scene_t;
 typedef struct idtx_node  idtx_node_t;
+typedef struct idtx_anim  idtx_anim_t;   // a skeleton's animation clip (borrowed)
 
 // One kind per ConvertXxx hook in the converter. A host switch()es on this to
 // decide which native entity to build and which payload getters to call.
@@ -100,6 +101,14 @@ typedef enum idtx_color_interp {
     IDTX_COLOR_INTERP_VERTEX,
     IDTX_COLOR_INTERP_FACE_VARYING,
 } idtx_color_interp_t;
+
+// One animation channel's target. A skeletal clip has up to three tracks per
+// joint (UsdSkelAnimation translations/rotations/scales).
+typedef enum idtx_anim_track_type {
+    IDTX_ANIM_TRACK_TRANSLATION = 0,
+    IDTX_ANIM_TRACK_ROTATION,
+    IDTX_ANIM_TRACK_SCALE,
+} idtx_anim_track_type_t;
 
 // ---------------------------------------------------------------------
 // Import + lifetime.
@@ -172,6 +181,25 @@ IDTX_CORE_API idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* node);
 // IDTX_NODE_SKELETON — borrowed skeleton handle + its skinned mesh (or NULL).
 IDTX_CORE_API idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* node);
 IDTX_CORE_API idtx_mesh_t*     idtx_node_get_skinned_mesh(const idtx_node_t* node);
+
+// IDTX_NODE_SKELETON — the bound animation clip, or NULL if the skeleton has
+// none. Borrowed (owned by the scene). Each track targets one joint by name
+// (idtx_anim_track_get_bone_name, matching a skeleton bone) with one channel
+// (translation/rotation/scale). Keys are time-sorted; rotation keys are quats
+// (xyzw), translation/scale keys are vec3.
+IDTX_CORE_API idtx_anim_t* idtx_node_get_animation(const idtx_node_t* node);
+
+IDTX_CORE_API float   idtx_anim_get_length(const idtx_anim_t* anim);         // seconds
+IDTX_CORE_API int32_t idtx_anim_get_track_count(const idtx_anim_t* anim);
+
+IDTX_CORE_API const char*              idtx_anim_track_get_bone_name(const idtx_anim_t* anim, int32_t track);
+IDTX_CORE_API idtx_anim_track_type_t   idtx_anim_track_get_type(const idtx_anim_t* anim, int32_t track);
+IDTX_CORE_API int32_t                  idtx_anim_track_get_key_count(const idtx_anim_t* anim, int32_t track);
+IDTX_CORE_API double                   idtx_anim_track_get_key_time(const idtx_anim_t* anim, int32_t track, int32_t key);
+// Valid for TRANSLATION/SCALE tracks — writes 3 floats.
+IDTX_CORE_API void                     idtx_anim_track_get_key_vec3(const idtx_anim_t* anim, int32_t track, int32_t key, float out_xyz[3]);
+// Valid for ROTATION tracks — writes 4 floats (xyzw).
+IDTX_CORE_API void                     idtx_anim_track_get_key_quat(const idtx_anim_t* anim, int32_t track, int32_t key, float out_xyzw[4]);
 
 // IDTX_NODE_COLLISION — shape + authored axis/height/radius, plus the
 // interaction-type token list (static/grab/etc.).

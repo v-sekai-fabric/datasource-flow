@@ -16,8 +16,11 @@
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/skin.hpp>
+#include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/core/math.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/node_path.hpp>
 
 #include "idtx_core/idtx_scene.h"
 #include "idtx_core/idtx_core.h"
@@ -39,6 +42,13 @@ namespace {
 Transform3D to_transform(const float m[16]) {
     Basis basis(Vector3(m[0], m[1], m[2]), Vector3(m[4], m[5], m[6]), Vector3(m[8], m[9], m[10]));
     return Transform3D(basis, Vector3(m[12], m[13], m[14]));
+}
+
+// Godot forbids '/' and ':' in bone names (USD joint paths use them). Both the
+// skeleton bones and the animation track targets are sanitized the same way so
+// the joint->bone map keys line up.
+String sanitize_bone(const char* usd_name) {
+    return String(usd_name).replace("/", "_").replace(":", "_");
 }
 
 // Build the Godot material for a node — the single material path for the whole
@@ -226,18 +236,57 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
             auto* sk = memnew(UsdSkeletonNode3D);
             if (idtx_skeleton_t* skel = idtx_node_get_skeleton(node)) {
                 const int32_t bc = idtx_skeleton_get_bone_count(skel);
+                // Maps each animation track's NodePath (sanitized joint name) to a
+                // bone index; UsdSkeletonNode3D::_process uses it to drive poses.
+                Dictionary joint_bone_map;
                 for (int32_t b = 0; b < bc; ++b) {
-                    // Godot forbids '/' and ':' in bone names (USD joint paths use
-                    // them); sanitize. Skinning is index-based, so renaming is safe.
-                    String bone_name = String(idtx_skeleton_get_bone_name(skel, b)).replace("/", "_").replace(":", "_");
+                    String bone_name = sanitize_bone(idtx_skeleton_get_bone_name(skel, b));
                     int32_t bi = sk->add_bone(bone_name);
                     sk->set_bone_parent(bi, idtx_skeleton_get_bone_parent(skel, b));
                     float rest[16]; idtx_skeleton_get_bone_rest(skel, b, rest);
                     sk->set_bone_rest(bi, to_transform(rest));
+                    joint_bone_map[NodePath(bone_name)] = bi;
                 }
                 sk->reset_bone_poses();
+                sk->set_joint_to_bone_map(joint_bone_map);
             }
             sk->set_transform(xform);
+            // Build the skeletal animation clip (per-joint translation/rotation/
+            // scale tracks). Playback is driven by UsdSkeletonNode3D::_process,
+            // which resolves each track's path through the joint->bone map above.
+            if (idtx_anim_t* a = idtx_node_get_animation(node)) {
+                Ref<Animation> anim;
+                anim.instantiate();
+                anim->set_length(idtx_anim_get_length(a));
+                const int32_t tc = idtx_anim_get_track_count(a);
+                for (int32_t t = 0; t < tc; ++t) {
+                    const idtx_anim_track_type_t tt = idtx_anim_track_get_type(a, t);
+                    Animation::TrackType gt = Animation::TYPE_POSITION_3D;
+                    if (tt == IDTX_ANIM_TRACK_ROTATION) {
+                        gt = Animation::TYPE_ROTATION_3D;
+                    } else if (tt == IDTX_ANIM_TRACK_SCALE) {
+                        gt = Animation::TYPE_SCALE_3D;
+                    }
+                    const int32_t ti = anim->add_track(gt);
+                    anim->track_set_path(ti, NodePath(sanitize_bone(idtx_anim_track_get_bone_name(a, t))));
+                    const int32_t kc = idtx_anim_track_get_key_count(a, t);
+                    for (int32_t k = 0; k < kc; ++k) {
+                        const double time = idtx_anim_track_get_key_time(a, t, k);
+                        if (tt == IDTX_ANIM_TRACK_ROTATION) {
+                            float q[4]; idtx_anim_track_get_key_quat(a, t, k, q);
+                            anim->rotation_track_insert_key(ti, time, Quaternion(q[0], q[1], q[2], q[3]));
+                        } else {
+                            float v[3]; idtx_anim_track_get_key_vec3(a, t, k, v);
+                            if (tt == IDTX_ANIM_TRACK_SCALE) {
+                                anim->scale_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
+                            } else {
+                                anim->position_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
+                            }
+                        }
+                    }
+                }
+                sk->set_animation(anim);
+            }
             // Attach the skinned mesh as a MeshInstance3D child and bind GPU skin
             // deformation: build_array_mesh emits per-vertex bone/weight arrays, the
             // MeshInstance points at this Skeleton3D (via _notification on parenting),
