@@ -349,6 +349,42 @@ namespace IdtxCore.Bridge
                 }
             }
 
+            // Blend shapes (morph targets). Deltas are direction vectors in
+            // mesh-local space, so rebase them with the LINEAR part of `bake`
+            // (MultiplyVector: rotation+scale, no translation). Multi-frame
+            // (in-between) shapes collapse to their last/full-weight frame.
+            // Computed once here and attached to every surface below (each surface
+            // holds the full vertex array).
+            int shapeCount = mesh.blendShapeCount;
+            string[] bsNames = null;
+            float[][] bsPos = null;
+            float[][] bsNrm = null;
+            if (shapeCount > 0)
+            {
+                bsNames = new string[shapeCount];
+                bsPos = new float[shapeCount][];
+                bsNrm = new float[shapeCount][];
+                var dV = new Vector3[mesh.vertexCount];
+                var dN = new Vector3[mesh.vertexCount];
+                for (int bsi = 0; bsi < shapeCount; ++bsi)
+                {
+                    int frames = mesh.GetBlendShapeFrameCount(bsi);
+                    mesh.GetBlendShapeFrameVertices(bsi, frames - 1, dV, dN, null);
+                    var pd = new float[mesh.vertexCount * 3];
+                    var nd = new float[mesh.vertexCount * 3];
+                    for (int v = 0; v < mesh.vertexCount; ++v)
+                    {
+                        Vector3 p = bake.MultiplyVector(dV[v]);
+                        pd[v * 3 + 0] = p.x; pd[v * 3 + 1] = p.y; pd[v * 3 + 2] = p.z;
+                        Vector3 nrm = bake.MultiplyVector(dN[v]);
+                        nd[v * 3 + 0] = nrm.x; nd[v * 3 + 1] = nrm.y; nd[v * 3 + 2] = nrm.z;
+                    }
+                    bsNames[bsi] = mesh.GetBlendShapeName(bsi);
+                    bsPos[bsi] = pd;
+                    bsNrm[bsi] = nd;
+                }
+            }
+
             for (int s = 0; s < subCount; ++s)
             {
                 var indices = mesh.GetIndices(s);
@@ -371,6 +407,11 @@ namespace IdtxCore.Bridge
                 NativeMethods.idtx_mesh_set_indices(mh, indices.Length, indices);
                 if (bpv > 0)
                     NativeMethods.idtx_mesh_set_skinning(mh, bpv, boneIndices, weights);
+                if (shapeCount > 0)
+                {
+                    for (int bsi = 0; bsi < shapeCount; ++bsi)
+                        NativeMethods.idtx_mesh_add_blendshape(mh, bsNames[bsi], bsPos[bsi], bsNrm[bsi]);
+                }
 
                 int matIdx = -1;
                 if (perSubmeshMaterials != null && s < perSubmeshMaterials.Length)

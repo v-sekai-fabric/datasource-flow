@@ -147,6 +147,13 @@ namespace IdtxCore.Native
             [In] float[] weights);
 
         [DllImport(Lib.DllName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void idtx_mesh_add_blendshape(
+            MeshHandle mesh,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+            [In] float[] positionDeltas,
+            [In] float[] normalDeltas);
+
+        [DllImport(Lib.DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int idtx_mesh_get_vertex_count(MeshHandle mesh);
 
         [DllImport(Lib.DllName, CallingConvention = CallingConvention.Cdecl)]

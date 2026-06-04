@@ -40,6 +40,7 @@
 #include <pxr/usd/usdGeom/scope.h>
 #include <pxr/usd/usdGeom/sphere.h>
 #include <pxr/usd/usdSkel/bindingAPI.h>
+#include <pxr/usd/usdSkel/blendShape.h>
 #include <pxr/usd/usdSkel/root.h>
 #include <pxr/usd/usdSkel/skeleton.h>
 #include <pxr/usd/usdSkel/tokens.h>
@@ -389,6 +390,62 @@ static void bind_mesh_to_skeleton(
     // explicitly, but that bloated round-trip diffs against
     // identity-bind fixtures.) Future API extension can take a
     // non-identity bind matrix on the idtx_mesh handle if needed.
+
+    // Blend shapes (morph targets). Author one UsdSkelBlendShape prim per target
+    // under the mesh, then list them on the binding (skel:blendShapes +
+    // skel:blendShapeTargets). Deltas arrive already in the canonical frame (the
+    // host adapter rebased them), so they are written verbatim. Sparse via
+    // pointIndices: only points whose delta is non-negligible are emitted.
+    int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
+    if (bs_count > 0) {
+        pxr::VtArray<pxr::TfToken> bs_names;
+        pxr::SdfPathVector bs_targets;
+        std::set<std::string> bs_siblings;
+        for (int32_t b = 0; b < bs_count; ++b) {
+            std::string raw_name = idtx_mesh_get_blendshape_name(mesh, b);
+            std::string safe = sanitise_prim_name(
+                raw_name.empty() ? ("blendShape_" + std::to_string(b)) : raw_name);
+            pxr::SdfPath bs_path = unique_child_path(mesh_path, safe, bs_siblings);
+            pxr::UsdSkelBlendShape bs = pxr::UsdSkelBlendShape::Define(stage, bs_path);
+
+            std::vector<float> pos(static_cast<size_t>(vc) * 3);
+            idtx_mesh_get_blendshape_position_deltas(mesh, b, pos.data());
+            const bool has_n = idtx_mesh_blendshape_has_normals(mesh, b) != 0;
+            std::vector<float> nrm;
+            if (has_n) {
+                nrm.resize(static_cast<size_t>(vc) * 3);
+                idtx_mesh_get_blendshape_normal_deltas(mesh, b, nrm.data());
+            }
+
+            pxr::VtArray<int>          point_indices;
+            pxr::VtArray<pxr::GfVec3f> offsets;
+            pxr::VtArray<pxr::GfVec3f> normal_offsets;
+            for (int32_t i = 0; i < vc; ++i) {
+                const float px = pos[i * 3 + 0], py = pos[i * 3 + 1], pz = pos[i * 3 + 2];
+                bool nonzero = (px * px + py * py + pz * pz) > 1e-12f;
+                if (has_n && !nonzero) {
+                    const float nx = nrm[i * 3 + 0], ny = nrm[i * 3 + 1], nz = nrm[i * 3 + 2];
+                    nonzero = (nx * nx + ny * ny + nz * nz) > 1e-12f;
+                }
+                if (!nonzero) continue;
+                point_indices.push_back(i);
+                offsets.push_back(pxr::GfVec3f(px, py, pz));
+                if (has_n) {
+                    normal_offsets.push_back(pxr::GfVec3f(nrm[i * 3 + 0], nrm[i * 3 + 1], nrm[i * 3 + 2]));
+                }
+            }
+            bs.CreateOffsetsAttr().Set(offsets);
+            bs.CreatePointIndicesAttr().Set(point_indices);
+            if (has_n) {
+                bs.CreateNormalOffsetsAttr().Set(normal_offsets);
+            }
+
+            bs_names.push_back(pxr::TfToken(raw_name));
+            bs_targets.push_back(bs_path);
+        }
+        binding.CreateBlendShapesAttr().Set(bs_names);
+        binding.CreateBlendShapeTargetsRel().SetTargets(bs_targets);
+    }
 }
 
 // Emit a single VSekaiSpringBoneAPI prim from idtx_spring_chain.

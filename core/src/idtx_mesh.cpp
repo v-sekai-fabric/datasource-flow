@@ -8,6 +8,13 @@
 #include <string>
 #include <vector>
 
+struct idtx_blendshape
+{
+    std::string        name;
+    std::vector<float> position_deltas;  // vertex_count*3
+    std::vector<float> normal_deltas;     // vertex_count*3, may be empty
+};
+
 struct idtx_mesh
 {
     std::string name;
@@ -22,6 +29,7 @@ struct idtx_mesh
     std::vector<int32_t> bone_indices;
     std::vector<float>   weights;
     std::vector<int32_t> face_vertex_counts;  // empty = triangle list
+    std::vector<idtx_blendshape> blendshapes;
 };
 
 static void copy_floats(std::vector<float>& dst, const float* src, size_t count)
@@ -96,6 +104,54 @@ extern "C" IDTX_CORE_API void idtx_mesh_set_skinning(
     size_t n = static_cast<size_t>(mesh->vertex_count) * static_cast<size_t>(bones_per_vertex);
     copy_ints(mesh->bone_indices, bone_indices, n);
     copy_floats(mesh->weights, weights, n);
+}
+
+extern "C" IDTX_CORE_API void idtx_mesh_add_blendshape(
+    idtx_mesh_t* mesh,
+    const char* name,
+    const float* position_deltas,
+    const float* normal_deltas)
+{
+    if (mesh == nullptr || position_deltas == nullptr || mesh->vertex_count <= 0) return;
+    size_t n = static_cast<size_t>(mesh->vertex_count) * 3;
+    idtx_blendshape bs;
+    bs.name = (name != nullptr) ? name : "";
+    copy_floats(bs.position_deltas, position_deltas, n);
+    if (normal_deltas != nullptr) copy_floats(bs.normal_deltas, normal_deltas, n);
+    mesh->blendshapes.push_back(std::move(bs));
+}
+
+extern "C" IDTX_CORE_API int32_t idtx_mesh_get_blendshape_count(const idtx_mesh_t* mesh)
+{
+    return (mesh != nullptr) ? static_cast<int32_t>(mesh->blendshapes.size()) : 0;
+}
+
+extern "C" IDTX_CORE_API const char* idtx_mesh_get_blendshape_name(const idtx_mesh_t* mesh, int32_t index)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return "";
+    return mesh->blendshapes[static_cast<size_t>(index)].name.c_str();
+}
+
+extern "C" IDTX_CORE_API int32_t idtx_mesh_blendshape_has_normals(const idtx_mesh_t* mesh, int32_t index)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return 0;
+    return mesh->blendshapes[static_cast<size_t>(index)].normal_deltas.empty() ? 0 : 1;
+}
+
+extern "C" IDTX_CORE_API void idtx_mesh_get_blendshape_position_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas)
+{
+    if (mesh == nullptr || out_deltas == nullptr) return;
+    if (index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return;
+    const std::vector<float>& d = mesh->blendshapes[static_cast<size_t>(index)].position_deltas;
+    if (!d.empty()) std::memcpy(out_deltas, d.data(), d.size() * sizeof(float));
+}
+
+extern "C" IDTX_CORE_API void idtx_mesh_get_blendshape_normal_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas)
+{
+    if (mesh == nullptr || out_deltas == nullptr) return;
+    if (index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return;
+    const std::vector<float>& d = mesh->blendshapes[static_cast<size_t>(index)].normal_deltas;
+    if (!d.empty()) std::memcpy(out_deltas, d.data(), d.size() * sizeof(float));
 }
 
 extern "C" IDTX_CORE_API int32_t idtx_mesh_get_vertex_count(const idtx_mesh_t* mesh)
