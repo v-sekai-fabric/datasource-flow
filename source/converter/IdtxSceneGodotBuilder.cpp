@@ -44,15 +44,6 @@ Transform3D to_transform(const float m[16]) {
     return Transform3D(basis, Vector3(m[12], m[13], m[14]));
 }
 
-// The stable JOIN KEY for a joint: its full USD path with '/' and ':' (both
-// forbidden in Godot bone names / NodePaths) flattened to '_'. USD joint paths
-// are unique, so this disambiguates the animation track -> bone-index map even
-// when leaf names collide. Used for the joint->bone map keys and the matching
-// animation track paths (NOT for the visible bone name — see leaf_bone_name).
-String sanitize_bone(const char* usd_name) {
-    return String(usd_name).replace("/", "_").replace(":", "_");
-}
-
 // The DISPLAY name for a bone: just the leaf joint (last path component). USD
 // joint names are full ancestor chains ("root/hips/spine/..."); the Skeleton3D
 // hierarchy already encodes parenting via bone parents, so flattening the whole
@@ -273,9 +264,12 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     sk->set_bone_parent(bi, idtx_skeleton_get_bone_parent(skel, b));
                     float rest[16]; idtx_skeleton_get_bone_rest(skel, b, rest);
                     sk->set_bone_rest(bi, to_transform(rest));
-                    // Join key stays the full unique joint path so animation tracks
-                    // resolve unambiguously even when leaf display names collide.
-                    joint_bone_map[NodePath(sanitize_bone(raw))] = bi;
+                    // Join key is the raw, full USD joint path. Dictionary/NodePath
+                    // keys have none of add_bone's ':' / '/' restrictions, and USD
+                    // joint paths are unique, so the track -> bone-index lookup stays
+                    // unambiguous even when leaf display names collide — no lossy
+                    // sanitization needed (the matching track path is built the same).
+                    joint_bone_map[NodePath(String(raw))] = bi;
                 }
                 sk->reset_bone_poses();
                 sk->set_joint_to_bone_map(joint_bone_map);
@@ -298,7 +292,7 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                         gt = Animation::TYPE_SCALE_3D;
                     }
                     const int32_t ti = anim->add_track(gt);
-                    anim->track_set_path(ti, NodePath(sanitize_bone(idtx_anim_track_get_bone_name(a, t))));
+                    anim->track_set_path(ti, NodePath(String(idtx_anim_track_get_bone_name(a, t))));
                     const int32_t kc = idtx_anim_track_get_key_count(a, t);
                     for (int32_t k = 0; k < kc; ++k) {
                         const double time = idtx_anim_track_get_key_time(a, t, k);
