@@ -142,6 +142,7 @@ struct FlatNode {
     // the geometry; finalize builds skinned_meshes (parallel to skin_materials).
     std::vector<FMeshData>     skin_surfaces;
     std::vector<int32_t>       skin_materials;
+    std::vector<std::string>   skin_names;     // source skin-target prim name
     std::vector<idtx_mesh_t*>  skinned_meshes;
 
     // skeletal animation (SKELETON kind); null when the skeleton has no clip.

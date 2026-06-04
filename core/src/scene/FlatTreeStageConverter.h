@@ -304,6 +304,7 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
         }
         if (!surf.Vertices.empty()) {
             n->skin_materials.push_back(surf.Subsets.empty() ? -1 : surf.Subsets.front().material);
+            n->skin_names.push_back(target.Name);   // preserve the skin-target prim name
             n->skin_surfaces.push_back(std::move(surf));
         }
     }

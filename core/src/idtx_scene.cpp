@@ -227,13 +227,18 @@ IDTX_CORE_API idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri) {
         S::FlatNode* n = up.get();
         if (n->kind == IDTX_NODE_MESH) {
             n->mesh = finalize_mesh(n->mesh_data);
+            if (n->mesh && !n->name.empty()) { idtx_mesh_set_name(n->mesh, n->name.c_str()); }
         } else if (n->kind == IDTX_NODE_SKELETON) {
             // One skinned mesh per source skin target (each carries its subsets +
-            // materials). Keep skin_materials parallel to the meshes we keep.
+            // materials + the source prim name). Keep the parallel arrays in sync
+            // with the meshes we actually keep.
             std::vector<int32_t> kept_materials;
             for (size_t i = 0; i < n->skin_surfaces.size(); ++i) {
                 idtx_mesh_t* m = finalize_mesh(n->skin_surfaces[i]);
                 if (m) {
+                    if (i < n->skin_names.size() && !n->skin_names[i].empty()) {
+                        idtx_mesh_set_name(m, n->skin_names[i].c_str());
+                    }
                     n->skinned_meshes.push_back(m);
                     kept_materials.push_back(i < n->skin_materials.size() ? n->skin_materials[i] : -1);
                 }

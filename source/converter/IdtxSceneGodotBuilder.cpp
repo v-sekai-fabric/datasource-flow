@@ -116,6 +116,9 @@ Ref<StandardMaterial3D> build_material_index(idtx_scene_t* scene, idtx_node_t* n
 
     const idtx_material_t* m = (mi >= 0) ? idtx_scene_get_material(scene, mi) : nullptr;
     if (m) {
+        if (const char* mname = idtx_material_get_name(m); mname && mname[0] != '\0') {
+            mat->set_name(String(mname));
+        }
         float rgba[4];
         idtx_material_get_base_color(m, rgba);
         const Color albedo(rgba[0], rgba[1], rgba[2], rgba[3]);
@@ -450,7 +453,10 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     mi->set_mesh(mesh);
                     apply_blend_shape_weights(mi, sm);
                     mi->set_skeleton(sk);
-                    mi->set_name(smc > 1 ? (String("Skin_") + String::num_int64(si)) : String("Skin"));
+                    const char* mn = idtx_mesh_get_name(sm);
+                    mi->set_name((mn && mn[0] != '\0')
+                        ? String(mn)
+                        : (smc > 1 ? String("Skin_") + String::num_int64(si) : String("Skin")));
                     sk->add_child(mi, true);
                     mi->set_skin(sk->create_skin_from_rest_transforms());
                 }
