@@ -357,6 +357,16 @@ static void bind_mesh_to_skeleton(
     pxr::UsdSkelBindingAPI binding = pxr::UsdSkelBindingAPI::Apply(mesh_prim);
     binding.CreateSkeletonRel().AddTarget(skel_path);
 
+    // Emit explicit skel:joints (the skeleton's joint order) so the per-vertex
+    // jointIndices map unambiguously, instead of relying on the importer
+    // falling back to the skeleton's own joint order.
+    if (pxr::UsdSkelSkeleton sk{stage->GetPrimAtPath(skel_path)}) {
+        pxr::VtArray<pxr::TfToken> sk_joints;
+        if (sk.GetJointsAttr().Get(&sk_joints) && !sk_joints.empty()) {
+            binding.CreateJointsAttr().Set(sk_joints);
+        }
+    }
+
     std::vector<int32_t> bi(static_cast<size_t>(vc) * static_cast<size_t>(bpv));
     std::vector<float>   bw(static_cast<size_t>(vc) * static_cast<size_t>(bpv));
     idtx_mesh_get_bone_indices(mesh, bi.data());
@@ -674,11 +684,21 @@ static void author_avatar_tree(
     }
 
     {
-        std::set<std::string> mesh_siblings;
+        // Per-mesh placement (principled, not "everything at top level"): a mesh
+        // that is actually skinned to the skeleton MUST live UNDER the SkelRoot
+        // for UsdSkel composition to bind it (UsdSkelCache only treats SkelRoot
+        // descendants as skin targets). Static meshes stay under the avatar root.
+        // Separate sibling-name sets since the two parents are distinct prims.
+        std::set<std::string> skel_mesh_siblings;
+        std::set<std::string> root_mesh_siblings;
         int32_t mesh_count = idtx_avatar_get_mesh_count(avatar);
         for (int32_t i = 0; i < mesh_count; ++i) {
-            pxr::SdfPath mp = emit_mesh(
-                stage, root_path, idtx_avatar_get_mesh(avatar, i), mesh_siblings);
+            idtx_mesh_t const* mesh_h = idtx_avatar_get_mesh(avatar, i);
+            const bool skinned = !skel_root_path.IsEmpty()
+                                 && idtx_mesh_get_bones_per_vertex(mesh_h) > 0;
+            pxr::SdfPath mesh_parent = skinned ? skel_root_path : root_path;
+            std::set<std::string>& siblings = skinned ? skel_mesh_siblings : root_mesh_siblings;
+            pxr::SdfPath mp = emit_mesh(stage, mesh_parent, mesh_h, siblings);
             if (mp.IsEmpty()) continue;
             int32_t mat_index = idtx_avatar_get_mesh_material(avatar, i);
             if (mat_index >= 0 && mat_index < static_cast<int32_t>(material_paths.size())
