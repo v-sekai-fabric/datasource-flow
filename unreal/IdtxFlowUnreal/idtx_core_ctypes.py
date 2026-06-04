@@ -128,9 +128,15 @@ def load(repo_root: Path | None = None) -> ctypes.CDLL:
         POINTER(c_float), POINTER(c_float)]
     lib.idtx_mesh_set_indices.argtypes = [c_void_p, c_int32, POINTER(c_int32)]
 
+    lib.idtx_skeleton_set_name.argtypes = [c_void_p, c_char_p]
+    lib.idtx_mesh_set_name.argtypes = [c_void_p, c_char_p]
+
     lib.idtx_material_create.restype = c_void_p
+    lib.idtx_material_set_name.argtypes = [c_void_p, c_char_p]
     lib.idtx_material_set_base_color.argtypes = [
         c_void_p, c_float, c_float, c_float, c_float]
+    lib.idtx_material_set_metallic.argtypes = [c_void_p, c_float]
+    lib.idtx_material_set_roughness.argtypes = [c_void_p, c_float]
 
     lib.idtx_core_export_avatar_to_usd.argtypes = [c_void_p, c_char_p]
     lib.idtx_core_export_avatar_to_usd.restype = c_int32
