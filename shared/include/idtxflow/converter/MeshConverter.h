@@ -11,6 +11,8 @@
  * Skeletal Prims are handled separately in the UsdSkeletalMeshConverter, which extracts the skinning data and skeleton bindings.
  * The actual mesh data is extracted in this converter and can be used by the skeletal mesh converter to create the final skeletal mesh asset.
  */
+#include <array>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -261,6 +263,12 @@ namespace converter
 			MeshDataType meshData;
 			MeshBuilder builder;
 			
+			source_points.clear();
+			// One engine vertex per (USD point, normal source, uv source). Vertex /
+			// constant-interp attributes share by point so the mesh stays indexed
+			// (1:1 with USD points); only faceVarying / per-face seams split a point.
+			std::map<std::array<int32_t, 3>, typename Types::Index> vertex_lookup;
+
 			// run the conversion face by face. Either all faces of the mesh or only the ones provided in the filer
 			int faces = !faceFilter.empty() ? faceFilter.size() : facePointCounts.size();
 			for (int f = 0; f < faces; ++f)
@@ -282,6 +290,9 @@ namespace converter
 				// data and thus each point and it's related data is copied for each face using this point. It's a known
 				// issue, that this can lead to a much higher memory consumption then necessary and may also have negative
 				// impact on rendering performance.
+				// This face's deduped engine-vertex indices, in winding order.
+				std::vector<typename Types::Index> faceVerts;
+				faceVerts.reserve(pointCount);
 				for (int p = 0; p < pointCount; ++p)
 				{
 					int pointIndex = facePointIndices[facePointOffset + p];
@@ -394,27 +405,57 @@ namespace converter
 				        }
 				    }
 
-					builder.AddVertex(meshData, point, normal, uv, boneIdx, boneWeight);
+					// Source-index of each face-varying attribute (vertex / constant
+					// share by point; faceVarying by its own index; uniform or computed
+					// normals are per-face -> negative id so they never alias a point).
+					int32_t nrmVid = pointIndex;
+					if (normals.empty())
+					{
+						nrmVid = -1 - faceIndex;
+					}
+					else if (normalInterpolation == pxr::UsdGeomTokens->faceVarying)
+					{
+						nrmVid = facePointOffset + p;
+					}
+					else if (normalInterpolation == pxr::UsdGeomTokens->uniform)
+					{
+						nrmVid = -1 - faceIndex;
+					}
+					int32_t uvVid = pointIndex;
+					if (!texcoords.empty() && texcoordsInterpolation == pxr::UsdGeomTokens->faceVarying)
+					{
+						uvVid = texcoordIndices.empty() ? (facePointOffset + p)
+						                                : texcoordIndices[facePointOffset + p];
+					}
+					else if (!texcoords.empty() && texcoordsInterpolation == pxr::UsdGeomTokens->uniform)
+					{
+						uvVid = -1 - faceIndex;
+					}
+
+					std::array<int32_t, 3> vkey = { pointIndex, nrmVid, uvVid };
+					typename std::map<std::array<int32_t, 3>, typename Types::Index>::iterator found = vertex_lookup.find(vkey);
+					typename Types::Index vi;
+					if (found != vertex_lookup.end())
+					{
+						vi = found->second;
+					}
+					else
+					{
+						vi = builder.GetVertexCount(meshData);
+						builder.AddVertex(meshData, point, normal, uv, boneIdx, boneWeight);
+						source_points.push_back(pointIndex);
+						vertex_lookup.emplace(vkey, vi);
+					}
+					faceVerts.push_back(vi);
 				}
 
-				// once we converted all vertices of this face we re-construct the index list. While doing so
-				// we ensure that we triangulate the face if it contains of more then 3 points
-				if (pointCount == 3)
+				// Triangulate this face over its deduped vertices, preserving the
+				// original winding (fan: 0, i+1, i).
+				for (int i = 1; i + 1 < pointCount; ++i)
 				{
-					typename Types::Index vertexCount = builder.GetVertexCount(meshData);
-					builder.AddIndex(meshData, vertexCount - 3);
-					builder.AddIndex(meshData, vertexCount - 1);
-					builder.AddIndex(meshData, vertexCount - 2);
-				} else
-				{
-					// use simple fan triangulation if the current face is spanned from more then 3 points
-					typename Types::Index basePointIndex = builder.GetVertexCount(meshData) - pointCount;
-					for (int i = 1; i < pointCount - 1; ++i)
-					{
-						builder.AddIndex(meshData, basePointIndex);
-						builder.AddIndex(meshData, basePointIndex + i + 1);
-						builder.AddIndex(meshData, basePointIndex + i);
-					}
+					builder.AddIndex(meshData, faceVerts[0]);
+					builder.AddIndex(meshData, faceVerts[i + 1]);
+					builder.AddIndex(meshData, faceVerts[i]);
 				}
 			}
 
@@ -426,6 +467,10 @@ namespace converter
 	    static typename Types::Vector2 FlipUvV(const typename Types::Vector2& input);
 	    
 	private:
+		// Per output vertex, the source USD point index it was de-indexed from.
+		// Populated by BuildMesh so morph-target offsets (authored per USD point)
+		// map onto the indexed engine vertices without a separate scatter table.
+		std::vector<int32_t> source_points;
 		// the points of the mesh, as defined in the usd prim
 		pxr::VtArray<class pxr::GfVec3f> points;
 		// the list of number of points that span the face at index
