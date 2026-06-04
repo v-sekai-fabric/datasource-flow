@@ -274,11 +274,21 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
             }
             Array bs_arr; bs_arr.resize(Mesh::ARRAY_MAX);
             bs_arr[Mesh::ARRAY_VERTEX] = bverts;
-            if (has_n && idtx_mesh_blendshape_has_normals(mesh, b)) {
-                std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
-                PackedVector3Array bnorm; bnorm.resize(vc);
-                for (int32_t i = 0; i < vc; ++i) {
-                    bnorm[i] = Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
+            // Godot requires every blend shape to carry the SAME Vertex/Normal/
+            // Tangent arrays as the base surface ("Blend shape format must match
+            // the main array format"). When the base has normals, EVERY shape must
+            // supply a normal array -- even shapes with no authored normal deltas
+            // (a zero-filled delta leaves the base normal unchanged). Emitting it
+            // only for shapes that happen to have normals (as before) made meshes
+            // with any normal-less shape -- e.g. the face's 448 morphs, 2 without
+            // normals -- fail add_surface_from_arrays and vanish entirely.
+            if (has_n) {
+                PackedVector3Array bnorm; bnorm.resize(vc);  // zero-initialised
+                if (idtx_mesh_blendshape_has_normals(mesh, b)) {
+                    std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
+                    for (int32_t i = 0; i < vc; ++i) {
+                        bnorm[i] = Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
+                    }
                 }
                 bs_arr[Mesh::ARRAY_NORMAL] = bnorm;
             }
