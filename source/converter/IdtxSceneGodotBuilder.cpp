@@ -158,7 +158,10 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
             if (idtx_skeleton_t* skel = idtx_node_get_skeleton(node)) {
                 const int32_t bc = idtx_skeleton_get_bone_count(skel);
                 for (int32_t b = 0; b < bc; ++b) {
-                    int32_t bi = sk->add_bone(String(idtx_skeleton_get_bone_name(skel, b)));
+                    // Godot forbids '/' and ':' in bone names (USD joint paths use
+                    // them); sanitize. Skinning is index-based, so renaming is safe.
+                    String bone_name = String(idtx_skeleton_get_bone_name(skel, b)).replace("/", "_").replace(":", "_");
+                    int32_t bi = sk->add_bone(bone_name);
                     sk->set_bone_parent(bi, idtx_skeleton_get_bone_parent(skel, b));
                     float rest[16]; idtx_skeleton_get_bone_rest(skel, b, rest);
                     sk->set_bone_rest(bi, to_transform(rest));
@@ -166,6 +169,20 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                 sk->reset_bone_poses();
             }
             sk->set_transform(xform);
+            // Attach the skinned mesh as a MeshInstance3D child so the geometry
+            // renders (in rest pose). Full GPU skin deformation needs a Skin
+            // resource + bone/weight arrays — a Phase 1b refinement.
+            if (idtx_mesh_t* sm = idtx_node_get_skinned_mesh(node)) {
+                Ref<ArrayMesh> mesh = build_array_mesh(sm);
+                if (mesh->get_surface_count() > 0) {
+                    mesh->surface_set_material(0, default_material(node));
+                    auto* mi = memnew(UsdMeshInstanceNode3D);
+                    mi->set_mesh(mesh);
+                    mi->set_skeleton(sk);
+                    mi->set_name("Skin");
+                    sk->add_child(mi);
+                }
+            }
             return sk;
         }
         case IDTX_NODE_COLLISION: {
