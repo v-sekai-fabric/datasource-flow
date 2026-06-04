@@ -208,6 +208,16 @@ IDTX_CORE_API int32_t     idtx_mesh_blendshape_has_normals(const idtx_mesh_t* me
 IDTX_CORE_API void        idtx_mesh_get_blendshape_position_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);
 IDTX_CORE_API void        idtx_mesh_get_blendshape_normal_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);
 
+// Geom subsets — per-material face subsets (UsdGeomSubset, family "materialBind").
+// Each subset is a contiguous [index_offset, index_offset+index_count) range of
+// the mesh's index buffer bound to one material slot. A mesh with 0 or 1 subset
+// is single-material (use idtx_*_get_mesh_material). Hosts map subsets to Godot
+// ArrayMesh surfaces / glTF primitives; the exporter authors a UsdGeomSubset each.
+IDTX_CORE_API void    idtx_mesh_add_subset(idtx_mesh_t* mesh, int32_t material, int32_t index_offset, int32_t index_count);
+IDTX_CORE_API int32_t idtx_mesh_get_subset_count(const idtx_mesh_t* mesh);
+IDTX_CORE_API void    idtx_mesh_get_subset(const idtx_mesh_t* mesh, int32_t index,
+                                           int32_t* out_material, int32_t* out_index_offset, int32_t* out_index_count);
+
 // Tris-to-quads reconstruction (CHI-253). Walks the mesh's triangle
 // list, builds the dual triangle-adjacency graph, runs greedy
 // mutual-best matching (each triangle picks its highest-weight

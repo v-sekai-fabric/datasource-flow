@@ -66,17 +66,27 @@ inline void set_display(N* n, const pxr::VtArray<pxr::GfVec4f>& colors, const px
     for (const auto& c : colors) { n->display_rgba.insert(n->display_rgba.end(), {c[0], c[1], c[2], c[3]}); }
 }
 
-// Convert the first bound material among `mds` into the scene material table,
-// returning its index (-1 if none). idtx_mesh is single-surface, so a multi-
-// subset mesh keeps only its first material — full per-subset materials need a
-// multi-surface mesh model (later).
+// Resolve one MeshDescription's bound material into the scene material table,
+// returning its index (-1 if unbound). Deduplicated by USD prim path, so a
+// material shared across meshes is read once and shared.
+template <typename MD>
+inline int32_t material_of(idtx::core::scene::FlatScene* scene, const MD& md) {
+    if (!md.usdMaterial) { return -1; }
+    const std::string path = md.usdMaterial.GetPrim().GetPath().GetString();
+    std::map<std::string, int32_t>::const_iterator it = scene->material_index_by_path.find(path);
+    if (it != scene->material_index_by_path.end()) { return it->second; }
+    scene->materials.push_back(idtx::core::detail::read_material(md.usdMaterial.GetPrim()));
+    const int32_t idx = static_cast<int32_t>(scene->materials.size()) - 1;
+    scene->material_index_by_path[path] = idx;
+    return idx;
+}
+
+// First bound material among `mds` (for single-surface mesh nodes), deduped.
 template <typename MD>
 inline int32_t first_material(idtx::core::scene::FlatScene* scene, const std::vector<MD>& mds) {
     for (const auto& md : mds) {
-        if (md.usdMaterial) {
-            scene->materials.push_back(idtx::core::detail::read_material(md.usdMaterial.GetPrim()));
-            return static_cast<int32_t>(scene->materials.size()) - 1;
-        }
+        const int32_t mi = material_of(scene, md);
+        if (mi >= 0) { return mi; }
     }
     return -1;
 }
@@ -116,6 +126,20 @@ inline void merge_mesh(idtx::core::scene::FMeshData& dst, const idtx::core::scen
             if (with_normals) { dbs->nrm_offsets.push_back(sbs.nrm_offsets[k]); }
         }
         if (with_normals) { dbs->has_normals = true; }
+    }
+}
+
+// Append `src` into `dst` (shared vertex buffer) and record the appended index
+// range as a material subset (UsdGeomSubset, familyName "materialBind"). Lets a
+// prim's GeomSubsets become one multi-material mesh instead of being merged into
+// a single material.
+inline void append_subset(idtx::core::scene::FMeshData& dst,
+                          const idtx::core::scene::FMeshData& src, int32_t material) {
+    const int32_t idx_offset = static_cast<int32_t>(dst.Triangles.size());
+    merge_mesh(dst, src);
+    const int32_t idx_count = static_cast<int32_t>(dst.Triangles.size()) - idx_offset;
+    if (idx_count > 0) {
+        dst.Subsets.push_back(idtx::core::scene::FSubset{material, idx_offset, idx_count});
     }
 }
 
@@ -251,8 +275,10 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertMesh(
     SC::FlatNode* n = OwningEntity->make_node();
     n->kind = IDTX_NODE_MESH; n->local_transform = transform;
     flat_detail::set_display(n, colors, interp);
-    for (const auto& md : mesh_descriptions) flat_detail::merge_mesh(n->mesh_data, md.meshData);
-    n->material_index = flat_detail::first_material(OwningEntity, mesh_descriptions);
+    // GeomSubsets -> material subsets of one mesh (multi-material static mesh).
+    for (const auto& md : mesh_descriptions)
+        flat_detail::append_subset(n->mesh_data, md.meshData, flat_detail::material_of(OwningEntity, md));
+    n->material_index = n->mesh_data.Subsets.empty() ? -1 : n->mesh_data.Subsets.front().material;
     return n;  // mesh_data -> idtx_mesh at finalize (idtx_scene.cpp)
 }
 
@@ -268,14 +294,20 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
     for (const auto& bone : skel.Bones)
         idtx_skeleton_add_bone(n->skeleton, bone.Name.c_str(), bone.parentIndex,
                                bone.restTransform.m, bone.bindPose.m);
-    // collapse all skin targets' subsets into one skinned mesh (staged in mesh_data)
-    for (const auto& target : skel.SkinTargets)
-        for (const auto& md : target.MeshDescriptions) flat_detail::merge_mesh(n->mesh_data, md.meshData);
+    // One skinned mesh PER source skin target (USD mesh prim); its GeomSubsets
+    // become material subsets of that mesh, so the authored per-material bindings
+    // survive instead of collapsing to one. Separate prims stay separate meshes.
     for (const auto& target : skel.SkinTargets) {
-        const int32_t mi = flat_detail::first_material(OwningEntity, target.MeshDescriptions);
-        if (mi >= 0) { n->material_index = mi; break; }
+        SC::FMeshData surf;
+        for (const auto& md : target.MeshDescriptions) {
+            flat_detail::append_subset(surf, md.meshData, flat_detail::material_of(OwningEntity, md));
+        }
+        if (!surf.Vertices.empty()) {
+            n->skin_materials.push_back(surf.Subsets.empty() ? -1 : surf.Subsets.front().material);
+            n->skin_surfaces.push_back(std::move(surf));
+        }
     }
-    return n;  // mesh_data -> skinned_mesh at finalize
+    return n;  // skin_surfaces -> skinned_meshes at finalize
 }
 
 // Pseudo-instancing -> Phase 1b. For 1a, convert each occurrence as a plain

@@ -25,6 +25,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -68,6 +69,16 @@ struct FBlendShape {
     std::vector<FVec3>   nrm_offsets;     // parallel to indices (empty if no normals)
 };
 
+// A face subset bound to one material: a contiguous range of the Triangles
+// index buffer. Mirrors UsdGeomSubset (familyName "materialBind") and maps to a
+// Godot ArrayMesh surface / glTF primitive. A single-material mesh has exactly
+// one subset spanning all triangles.
+struct FSubset {
+    int32_t material      = -1;
+    int32_t index_offset  = 0;   // first index in Triangles
+    int32_t index_count   = 0;   // number of indices (multiple of 3)
+};
+
 struct FMeshData {
     std::vector<FVec3>   Vertices;
     std::vector<int32_t> Triangles;
@@ -77,6 +88,7 @@ struct FMeshData {
     std::vector<int32_t> Bones;
     std::vector<float>   Weights;
     std::vector<FBlendShape> BlendShapes;
+    std::vector<FSubset> Subsets;   // per-material face subsets (UsdGeomSubset)
 };
 
 // Skeletal animation, flattened from the converter's AnimationDescription. One
@@ -121,8 +133,16 @@ struct FlatNode {
     // mesh / skeleton — owned idtx_* handles built from FMeshData (idtx_scene.cpp)
     idtx_mesh_t*     mesh = nullptr;
     idtx_skeleton_t* skeleton = nullptr;
-    idtx_mesh_t*     skinned_mesh = nullptr;
+    idtx_mesh_t*     skinned_mesh = nullptr;   // == skinned_meshes[0], back-compat
     FMeshData        mesh_data;        // staging; converted to `mesh` at finalize
+
+    // SKELETON kind: one skinned mesh PER source skin target / GeomSubset, each
+    // with its own material -- NOT merged, so the authored materials survive
+    // (USD's standard is one binding per mesh / GeomSubset). skin_surfaces stage
+    // the geometry; finalize builds skinned_meshes (parallel to skin_materials).
+    std::vector<FMeshData>     skin_surfaces;
+    std::vector<int32_t>       skin_materials;
+    std::vector<idtx_mesh_t*>  skinned_meshes;
 
     // skeletal animation (SKELETON kind); null when the skeleton has no clip.
     std::unique_ptr<FAnimation> animation;
@@ -151,6 +171,10 @@ struct FlatScene {
     std::vector<std::unique_ptr<FlatNode>> nodes;
     std::vector<idtx_material_t*>          materials;   // owned
     std::vector<FTexture>                  textures;    // referenced by material path key
+    // Dedup: a material bound to several meshes (e.g. Hair on Ear/Tail/Hair) is
+    // read once and shared by USD prim path, so the table stays at the authored
+    // material count instead of one-per-binding.
+    std::map<std::string, int32_t>         material_index_by_path;
     idtx_axis_t up_axis = IDTX_AXIS_Y;
     double      meters_per_unit = 0.01;
 

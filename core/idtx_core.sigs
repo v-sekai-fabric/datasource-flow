@@ -66,6 +66,9 @@ float idtx_mesh_get_blendshape_weight(const idtx_mesh_t* mesh, int32_t index);
 int32_t idtx_mesh_blendshape_has_normals(const idtx_mesh_t* mesh, int32_t index);
 void idtx_mesh_get_blendshape_position_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);
 void idtx_mesh_get_blendshape_normal_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);
+void idtx_mesh_add_subset(idtx_mesh_t* mesh, int32_t material, int32_t index_offset, int32_t index_count);
+int32_t idtx_mesh_get_subset_count(const idtx_mesh_t* mesh);
+void idtx_mesh_get_subset(const idtx_mesh_t* mesh, int32_t index, int32_t* out_material, int32_t* out_index_offset, int32_t* out_index_count);
 int32_t idtx_mesh_reconstruct_quads(idtx_mesh_t* mesh, float planarity_max_degrees);
 
 # --- idtx_material -----------------------------------------------------
@@ -259,6 +262,9 @@ double idtx_node_get_sphere_radius(const idtx_node_t* node);
 idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* node);
 idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* node);
 idtx_mesh_t* idtx_node_get_skinned_mesh(const idtx_node_t* node);
+int32_t idtx_node_get_skinned_mesh_count(const idtx_node_t* node);
+idtx_mesh_t* idtx_node_get_skinned_mesh_at(const idtx_node_t* node, int32_t index);
+int32_t idtx_node_get_skinned_mesh_material(const idtx_node_t* node, int32_t index);
 idtx_anim_t* idtx_node_get_animation(const idtx_node_t* node);
 float idtx_anim_get_length(const idtx_anim_t* anim);
 int32_t idtx_anim_get_track_count(const idtx_anim_t* anim);

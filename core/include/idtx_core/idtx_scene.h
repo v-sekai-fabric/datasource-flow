@@ -202,6 +202,13 @@ IDTX_CORE_API idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* node);
 IDTX_CORE_API idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* node);
 IDTX_CORE_API idtx_mesh_t*     idtx_node_get_skinned_mesh(const idtx_node_t* node);
 
+// One skinned mesh per source skin target (each keeps its own material +
+// GeomSubsets). idtx_node_get_skinned_mesh returns [0] for back-compat; iterate
+// these to bind every skin target. Material index is into idtx_scene_get_material.
+IDTX_CORE_API int32_t      idtx_node_get_skinned_mesh_count(const idtx_node_t* node);
+IDTX_CORE_API idtx_mesh_t* idtx_node_get_skinned_mesh_at(const idtx_node_t* node, int32_t index);
+IDTX_CORE_API int32_t      idtx_node_get_skinned_mesh_material(const idtx_node_t* node, int32_t index);
+
 // IDTX_NODE_SKELETON — the bound animation clip, or NULL if the skeleton has
 // none. Borrowed (owned by the scene). Each track targets one joint by name
 // (idtx_anim_track_get_bone_name, matching a skeleton bone) with one channel

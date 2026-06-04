@@ -16,6 +16,15 @@ struct idtx_blendshape
     std::vector<float> normal_deltas;     // vertex_count*3, may be empty
 };
 
+// One UsdGeomSubset (family "materialBind"): a contiguous range of the index
+// buffer bound to one material slot.
+struct idtx_geom_subset
+{
+    int32_t material     = -1;
+    int32_t index_offset = 0;
+    int32_t index_count  = 0;
+};
+
 struct idtx_mesh
 {
     std::string name;
@@ -31,6 +40,9 @@ struct idtx_mesh
     std::vector<float>   weights;
     std::vector<int32_t> face_vertex_counts;  // empty = triangle list
     std::vector<idtx_blendshape> blendshapes;
+    // Per-material face subsets (UsdGeomSubset, family "materialBind"); a range
+    // of the index buffer + a material slot. Empty/one-subset => single material.
+    std::vector<idtx_geom_subset> subsets;
 };
 
 static void copy_floats(std::vector<float>& dst, const float* src, size_t count)
@@ -161,6 +173,37 @@ extern "C" IDTX_CORE_API void idtx_mesh_get_blendshape_normal_deltas(const idtx_
     if (index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return;
     const std::vector<float>& d = mesh->blendshapes[static_cast<size_t>(index)].normal_deltas;
     if (!d.empty()) std::memcpy(out_deltas, d.data(), d.size() * sizeof(float));
+}
+
+// --- Geom subsets (UsdGeomSubset, family "materialBind") -----------------
+
+extern "C" IDTX_CORE_API void idtx_mesh_add_subset(
+    idtx_mesh_t* mesh, int32_t material, int32_t index_offset, int32_t index_count)
+{
+    if (mesh == nullptr || index_count <= 0) { return; }
+    idtx_geom_subset s;
+    s.material = material;
+    s.index_offset = index_offset;
+    s.index_count = index_count;
+    mesh->subsets.push_back(s);
+}
+
+extern "C" IDTX_CORE_API int32_t idtx_mesh_get_subset_count(const idtx_mesh_t* mesh)
+{
+    return (mesh != nullptr) ? static_cast<int32_t>(mesh->subsets.size()) : 0;
+}
+
+// Read subset `index`: material slot + the [offset, offset+count) range into the
+// index buffer. Any out_* may be NULL.
+extern "C" IDTX_CORE_API void idtx_mesh_get_subset(
+    const idtx_mesh_t* mesh, int32_t index,
+    int32_t* out_material, int32_t* out_index_offset, int32_t* out_index_count)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->subsets.size())) { return; }
+    const idtx_geom_subset& s = mesh->subsets[static_cast<size_t>(index)];
+    if (out_material)     { *out_material = s.material; }
+    if (out_index_offset) { *out_index_offset = s.index_offset; }
+    if (out_index_count)  { *out_index_count = s.index_count; }
 }
 
 extern "C" IDTX_CORE_API int32_t idtx_mesh_get_vertex_count(const idtx_mesh_t* mesh)

@@ -27,6 +27,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
+#include <pxr/usd/usdGeom/subset.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformOp.h>
@@ -758,19 +759,40 @@ static void author_avatar_tree(
             pxr::SdfPath mesh_parent = skinned ? skel_root_path : root_path;
             std::set<std::string>& siblings = skinned ? skel_mesh_siblings : root_mesh_siblings;
             pxr::SdfPath mp = emit_mesh(stage, mesh_parent, mesh_h, siblings);
-            if (mp.IsEmpty()) continue;
-            int32_t mat_index = idtx_avatar_get_mesh_material(avatar, i);
-            if (mat_index >= 0 && mat_index < static_cast<int32_t>(material_paths.size())
-                && !material_paths[mat_index].IsEmpty()) {
-                pxr::UsdPrim mesh_prim = stage->GetPrimAtPath(mp);
-                pxr::UsdShadeMaterial mat = pxr::UsdShadeMaterial::Get(
-                    stage, material_paths[mat_index]);
-                // Apply the API schema first — UsdShadeMaterialBindingAPI::Bind()
-                // writes the material:binding rel but does NOT add the API to
-                // apiSchemas. Without it usdchecker --arkit=false flags the
-                // material:binding rel as "MissingMaterialBindingAPI".
-                auto binding = pxr::UsdShadeMaterialBindingAPI::Apply(mesh_prim);
-                binding.Bind(mat);
+            if (mp.IsEmpty()) { continue; }
+            pxr::UsdPrim mesh_prim = stage->GetPrimAtPath(mp);
+            const int32_t subset_count = idtx_mesh_get_subset_count(mesh_h);
+            if (subset_count > 1) {
+                // Multi-material: author one UsdGeomSubset (family "materialBind")
+                // per material range and bind it, mirroring the authored bindings.
+                pxr::UsdGeomMesh gm(mesh_prim);
+                for (int32_t s = 0; s < subset_count; ++s) {
+                    int32_t smat = -1, soff = 0, scnt = 0;
+                    idtx_mesh_get_subset(mesh_h, s, &smat, &soff, &scnt);
+                    if (smat < 0 || smat >= static_cast<int32_t>(material_paths.size())
+                        || material_paths[smat].IsEmpty()) { continue; }
+                    pxr::VtArray<int> faces;
+                    for (int32_t f = soff / 3; f < (soff + scnt) / 3; ++f) { faces.push_back(f); }
+                    pxr::UsdGeomSubset gs = pxr::UsdGeomSubset::CreateGeomSubset(
+                        gm, pxr::TfToken("materialBind_" + std::to_string(s)),
+                        pxr::UsdGeomTokens->face, faces,
+                        pxr::TfToken("materialBind"), pxr::TfToken("partition"));
+                    auto sb = pxr::UsdShadeMaterialBindingAPI::Apply(gs.GetPrim());
+                    sb.Bind(pxr::UsdShadeMaterial::Get(stage, material_paths[smat]));
+                }
+            } else {
+                int32_t mat_index = idtx_avatar_get_mesh_material(avatar, i);
+                if (mat_index >= 0 && mat_index < static_cast<int32_t>(material_paths.size())
+                    && !material_paths[mat_index].IsEmpty()) {
+                    pxr::UsdShadeMaterial mat = pxr::UsdShadeMaterial::Get(
+                        stage, material_paths[mat_index]);
+                    // Apply the API schema first — UsdShadeMaterialBindingAPI::Bind()
+                    // writes the material:binding rel but does NOT add the API to
+                    // apiSchemas. Without it usdchecker --arkit=false flags the
+                    // material:binding rel as "MissingMaterialBindingAPI".
+                    auto binding = pxr::UsdShadeMaterialBindingAPI::Apply(mesh_prim);
+                    binding.Bind(mat);
+                }
             }
 
             bind_mesh_to_skeleton(

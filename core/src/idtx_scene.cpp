@@ -97,6 +97,11 @@ idtx_mesh_t* finalize_mesh(const S::FMeshData& md) {
                                  bpos.data(), has_n ? bnrm.data() : nullptr);
     }
 
+    // Per-material face subsets (UsdGeomSubset) -> idtx_mesh subsets.
+    for (const S::FSubset& s : md.Subsets) {
+        idtx_mesh_add_subset(mesh, s.material, s.index_offset, s.index_count);
+    }
+
     return mesh;
 }
 
@@ -220,8 +225,22 @@ IDTX_CORE_API idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri) {
     // Finalize staged mesh data into idtx_mesh handles.
     for (auto& up : scene->fs.nodes) {
         S::FlatNode* n = up.get();
-        if (n->kind == IDTX_NODE_MESH)          n->mesh = finalize_mesh(n->mesh_data);
-        else if (n->kind == IDTX_NODE_SKELETON) n->skinned_mesh = finalize_mesh(n->mesh_data);
+        if (n->kind == IDTX_NODE_MESH) {
+            n->mesh = finalize_mesh(n->mesh_data);
+        } else if (n->kind == IDTX_NODE_SKELETON) {
+            // One skinned mesh per source skin target (each carries its subsets +
+            // materials). Keep skin_materials parallel to the meshes we keep.
+            std::vector<int32_t> kept_materials;
+            for (size_t i = 0; i < n->skin_surfaces.size(); ++i) {
+                idtx_mesh_t* m = finalize_mesh(n->skin_surfaces[i]);
+                if (m) {
+                    n->skinned_meshes.push_back(m);
+                    kept_materials.push_back(i < n->skin_materials.size() ? n->skin_materials[i] : -1);
+                }
+            }
+            n->skin_materials = std::move(kept_materials);
+            n->skinned_mesh = n->skinned_meshes.empty() ? nullptr : n->skinned_meshes.front();
+        }
     }
 
     // Extract referenced texture bytes while the stage (and its asset resolver
@@ -235,8 +254,12 @@ IDTX_CORE_API void idtx_core_scene_destroy(idtx_scene_t* scene) {
     if (!scene) return;
     for (auto& up : scene->fs.nodes) {
         if (up->mesh)         idtx_mesh_destroy(up->mesh);
-        if (up->skinned_mesh) idtx_mesh_destroy(up->skinned_mesh);
-        if (up->skeleton)     idtx_skeleton_destroy(up->skeleton);
+        // skinned_mesh aliases skinned_meshes[0]; free the vector (not both).
+        for (idtx_mesh_t* sm : up->skinned_meshes) {
+            if (sm) { idtx_mesh_destroy(sm); }
+        }
+        if (up->skinned_meshes.empty() && up->skinned_mesh) { idtx_mesh_destroy(up->skinned_mesh); }
+        if (up->skeleton) { idtx_skeleton_destroy(up->skeleton); }
     }
     for (idtx_material_t* m : scene->fs.materials) if (m) idtx_material_destroy(m);
     delete scene;
@@ -301,11 +324,18 @@ IDTX_CORE_API idtx_avatar_t* idtx_scene_build_avatar(idtx_scene_t* scene) {
         idtx_avatar_set_skeleton(avatar, skel);
         skel_node->skeleton = nullptr;  // ownership moved
 
-        if (skel_node->skinned_mesh) {
-            bake_world_into_mesh(skel_node->skinned_mesh, W);
-            idtx_avatar_add_mesh(avatar, skel_node->skinned_mesh, skel_node->material_index);
-            skel_node->skinned_mesh = nullptr;
+        // Every skin target becomes its own avatar mesh (keeps per-mesh material;
+        // subsets ride along on the handle). Bake W into each so skinning lands
+        // in universe Y-up, then transfer ownership.
+        for (size_t i = 0; i < skel_node->skinned_meshes.size(); ++i) {
+            idtx_mesh_t* sm = skel_node->skinned_meshes[i];
+            if (!sm) { continue; }
+            bake_world_into_mesh(sm, W);
+            const int32_t mat = i < skel_node->skin_materials.size() ? skel_node->skin_materials[i] : -1;
+            idtx_avatar_add_mesh(avatar, sm, mat);
         }
+        skel_node->skinned_meshes.clear();   // ownership moved to avatar
+        skel_node->skinned_mesh = nullptr;
     }
 
     // Static meshes: bake each node's own world transform into its verts.
@@ -397,6 +427,23 @@ IDTX_CORE_API double idtx_node_get_sphere_radius(const idtx_node_t* n) { return 
 IDTX_CORE_API idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* n) { return as_node(n)->mesh; }
 IDTX_CORE_API idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* n) { return as_node(n)->skeleton; }
 IDTX_CORE_API idtx_mesh_t* idtx_node_get_skinned_mesh(const idtx_node_t* n) { return as_node(n)->skinned_mesh; }
+
+// A SKELETON node binds one skinned mesh PER source skin target (each keeps its
+// own material + subsets). idtx_node_get_skinned_mesh returns [0]; use these to
+// reach them all.
+IDTX_CORE_API int32_t idtx_node_get_skinned_mesh_count(const idtx_node_t* n) {
+    return static_cast<int32_t>(as_node(n)->skinned_meshes.size());
+}
+IDTX_CORE_API idtx_mesh_t* idtx_node_get_skinned_mesh_at(const idtx_node_t* n, int32_t i) {
+    const S::FlatNode* node = as_node(n);
+    if (i < 0 || i >= static_cast<int32_t>(node->skinned_meshes.size())) { return nullptr; }
+    return node->skinned_meshes[static_cast<size_t>(i)];
+}
+IDTX_CORE_API int32_t idtx_node_get_skinned_mesh_material(const idtx_node_t* n, int32_t i) {
+    const S::FlatNode* node = as_node(n);
+    if (i < 0 || i >= static_cast<int32_t>(node->skin_materials.size())) { return -1; }
+    return node->skin_materials[static_cast<size_t>(i)];
+}
 
 // ---- skeletal animation ----
 // idtx_anim_t* is a borrowed FAnimation* (owned by its FlatNode / the scene).
