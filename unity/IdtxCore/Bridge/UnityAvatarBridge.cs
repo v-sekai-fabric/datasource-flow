@@ -133,6 +133,47 @@ namespace IdtxCore.Bridge
             return skel;
         }
 
+        // Where extracted diffuse textures are written. Absolute paths get baked
+        // into the exported UsdUVTexture `file` inputs; the importer reads them
+        // back via OpenUSD's asset resolver. Override before AvatarFromGameObject
+        // to place them next to the .usd output.
+        public static string TextureDir =
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "idtx_export_textures");
+
+        // Blit any (possibly non-readable / compressed) Texture to a readable RT,
+        // encode to PNG, and write it. Returns the absolute path, or null on error.
+        private static string ExportTexturePng(Texture tex, string baseName)
+        {
+            if (tex == null) return null;
+            try
+            {
+                System.IO.Directory.CreateDirectory(TextureDir);
+                int w = Mathf.Max(tex.width, 4), h = Mathf.Max(tex.height, 4);
+                var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+                Graphics.Blit(tex, rt);
+                var prev = RenderTexture.active;
+                RenderTexture.active = rt;
+                var readable = new Texture2D(w, h, TextureFormat.RGBA32, false);
+                readable.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                readable.Apply();
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                byte[] png = readable.EncodeToPNG();
+                Object.DestroyImmediate(readable);
+                string safe = baseName;
+                foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                    safe = safe.Replace(c, '_');
+                string path = System.IO.Path.Combine(TextureDir, safe + ".png").Replace("\\", "/");
+                System.IO.File.WriteAllBytes(path, png);
+                return path;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[IdtxCore] texture export failed for " + baseName + ": " + e.Message);
+                return null;
+            }
+        }
+
         private static int AddOrLookupMaterial(
             AvatarHandle avatar,
             Dictionary<Material, int> cache,
@@ -161,6 +202,19 @@ namespace IdtxCore.Bridge
                 NativeMethods.idtx_material_set_roughness(mh, 1.0f - mat.GetFloat("_Glossiness"));
             else if (mat.HasProperty("_Smoothness"))
                 NativeMethods.idtx_material_set_roughness(mh, 1.0f - mat.GetFloat("_Smoothness"));
+
+            // Diffuse texture: lilToon/UTS/Standard expose the albedo on _MainTex
+            // (URP-Lit on _BaseMap). Extract it to a PNG and reference it by
+            // absolute path so it round-trips through the exported UsdUVTexture.
+            Texture mainTex = null;
+            if (mat.HasProperty("_MainTex")) mainTex = mat.GetTexture("_MainTex");
+            else if (mat.HasProperty("_BaseMap")) mainTex = mat.GetTexture("_BaseMap");
+            if (mainTex != null)
+            {
+                string texPath = ExportTexturePng(mainTex, mat.name + "_albedo");
+                if (!string.IsNullOrEmpty(texPath))
+                    NativeMethods.idtx_material_set_base_color_texture(mh, texPath);
+            }
 
             int idx = NativeMethods.idtx_avatar_add_material(avatar, mh);
             cache[mat] = idx;

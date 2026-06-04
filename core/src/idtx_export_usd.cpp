@@ -282,6 +282,33 @@ static pxr::SdfPath emit_material(
     shader.CreateInput(pxr::TfToken("roughness"), pxr::SdfValueTypeNames->Float)
           .Set(idtx_material_get_roughness(mat));
 
+    // Base-color texture: author the standard UsdPreviewSurface texture subtree
+    // (st reader -> UsdUVTexture -> diffuseColor) so the diffuse map round-trips.
+    // The Godot importer follows exactly this diffuseColor connection.
+    const char* base_tex = idtx_material_get_base_color_texture(mat);
+    if (base_tex != nullptr && base_tex[0] != '\0') {
+        pxr::UsdShadeShader st_reader = pxr::UsdShadeShader::Define(
+            stage, mat_path.AppendChild(pxr::TfToken("stReader")));
+        st_reader.CreateIdAttr().Set(pxr::TfToken("UsdPrimvarReader_float2"));
+        st_reader.CreateInput(pxr::TfToken("varname"), pxr::SdfValueTypeNames->Token)
+                 .Set(pxr::TfToken("st"));
+        pxr::UsdShadeOutput st_out = st_reader.CreateOutput(
+            pxr::TfToken("result"), pxr::SdfValueTypeNames->Float2);
+
+        pxr::UsdShadeShader tex = pxr::UsdShadeShader::Define(
+            stage, mat_path.AppendChild(pxr::TfToken("diffuseTexture")));
+        tex.CreateIdAttr().Set(pxr::TfToken("UsdUVTexture"));
+        tex.CreateInput(pxr::TfToken("file"), pxr::SdfValueTypeNames->Asset)
+           .Set(pxr::SdfAssetPath(base_tex));
+        tex.CreateInput(pxr::TfToken("st"), pxr::SdfValueTypeNames->Float2)
+           .ConnectToSource(st_out);
+        tex.CreateInput(pxr::TfToken("wrapS"), pxr::SdfValueTypeNames->Token).Set(pxr::TfToken("repeat"));
+        tex.CreateInput(pxr::TfToken("wrapT"), pxr::SdfValueTypeNames->Token).Set(pxr::TfToken("repeat"));
+        pxr::UsdShadeOutput tex_rgb = tex.CreateOutput(
+            pxr::TfToken("rgb"), pxr::SdfValueTypeNames->Float3);
+        shader.GetInput(pxr::TfToken("diffuseColor")).ConnectToSource(tex_rgb);
+    }
+
     // Connect shader surface output to material
     pxr::UsdShadeOutput surf_out = shader.CreateOutput(
         pxr::TfToken("surface"), pxr::SdfValueTypeNames->Token);
