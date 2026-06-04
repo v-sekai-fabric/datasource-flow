@@ -259,18 +259,17 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     const char* raw = idtx_skeleton_get_bone_name(skel, b);
                     // Visible name = leaf joint. add_bone rejects duplicates (and
                     // returns -1, which would desync bone indices from the skinning
-                    // data), so probe with numeric suffixes until one is accepted.
+                    // data), so resolve a free name up front via find_bone (-1 when
+                    // the name is unused) before adding.
                     String display = leaf_bone_name(raw);
                     if (display.is_empty()) {
                         display = String("bone");
                     }
-                    int32_t bi = sk->add_bone(display);
-                    for (int32_t suffix = 2; bi < 0 && suffix < bc + 3; ++suffix) {
-                        bi = sk->add_bone(display + "_" + String::num_int64(suffix));
+                    String unique = display;
+                    for (int32_t suffix = 2; sk->find_bone(unique) != -1; ++suffix) {
+                        unique = display + "_" + String::num_int64(suffix);
                     }
-                    if (bi < 0) {
-                        bi = sk->add_bone(String("bone_") + String::num_int64(b));
-                    }
+                    int32_t bi = sk->add_bone(unique);
                     sk->set_bone_parent(bi, idtx_skeleton_get_bone_parent(skel, b));
                     float rest[16]; idtx_skeleton_get_bone_rest(skel, b, rest);
                     sk->set_bone_rest(bi, to_transform(rest));
