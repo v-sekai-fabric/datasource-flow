@@ -812,7 +812,25 @@ static void author_avatar_tree(
                 weights.push_back(shape_weight[nm]);
             }
             anim.CreateBlendShapesAttr().Set(names);
-            anim.CreateBlendShapeWeightsAttr().Set(weights);
+            pxr::UsdAttribute w_attr = anim.CreateBlendShapeWeightsAttr();
+            // Author the weights three ways so every consumer is served:
+            //   * default value  = configured weights  (tools that read at the
+            //     default time, e.g. the Godot adapter, get the live pose)
+            //   * time 0 sample  = all zeros           (the rest / "reset" pose,
+            //     mirroring Godot's RESET animation)
+            //   * time 1 sample  = configured weights  (so the morph is visible
+            //     as shape-key animation: Blender's USD importer surfaces
+            //     time-sampled UsdSkelAnimation, not default-valued weights)
+            pxr::VtArray<float> zero_weights(weights.size(), 0.0f);
+            w_attr.Set(weights);
+            w_attr.Set(zero_weights, pxr::UsdTimeCode(0.0));
+            w_attr.Set(weights,      pxr::UsdTimeCode(1.0));
+            // Expose the 0..1 reset->configured range on the stage so importers
+            // pick up the animation extent.
+            stage->SetStartTimeCode(0.0);
+            if (stage->GetEndTimeCode() < 1.0) {
+                stage->SetEndTimeCode(1.0);
+            }
             if (pxr::UsdPrim skel_prim = stage->GetPrimAtPath(skel_path)) {
                 pxr::UsdSkelBindingAPI skel_binding = pxr::UsdSkelBindingAPI::Apply(skel_prim);
                 skel_binding.CreateAnimationSourceRel().SetTargets({anim_path});
