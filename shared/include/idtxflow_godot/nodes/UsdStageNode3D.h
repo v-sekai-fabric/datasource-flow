@@ -47,7 +47,7 @@ protected:
     void _reconstruct_node();
     void _configure_nodes_recursive(godot::Node3D* node, godot::Node* owner);
     void _cleanup_nodes();
-    godot::String _generate_cached_scene_name(const godot::String& stage_uri, bool binary = false);
+    godot::String _generate_cached_scene_name(const godot::String& stage_uri, bool binary = true);
     void _pack_and_save_cached_scene();
 
     static void _bind_methods();

@@ -175,7 +175,11 @@ void UsdStageNode3D::_pack_and_save_cached_scene()
         if (!DirAccess::dir_exists_absolute(cache_dir)) {
             DirAccess::make_dir_recursive_absolute(cache_dir);
         }
-        ResourceSaver::get_singleton()->save(packed_scene, cached_scene_name_);
+        // Binary .scn + FLAG_COMPRESS — Godot writes a Zstd-compressed binary
+        // resource ("RSCC"), far smaller/faster to load than text .tscn for the
+        // CDN-streamed cache.
+        ResourceSaver::get_singleton()->save(packed_scene, cached_scene_name_,
+                                             ResourceSaver::FLAG_COMPRESS);
         // Associate this node with its cached packed scene so Godot treats it as
         // an instanced scene (collapsed subtree in the editor, reloadable).
         set_scene_file_path(cached_scene_name_);
