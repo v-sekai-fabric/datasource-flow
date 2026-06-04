@@ -247,14 +247,15 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     if (bs_count > 0) {
         out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_RELATIVE);
         const bool has_n = idtx_mesh_has_normals(mesh);
-        std::vector<float> base_n;
-        if (has_n) { base_n.resize(vc * 3); idtx_mesh_get_normals(mesh, base_n.data()); }
         for (int32_t b = 0; b < bs_count; ++b) {
             out->add_blend_shape(StringName(idtx_mesh_get_blendshape_name(mesh, b)));
+            // RELATIVE mode: the blend-shape arrays hold the DELTA (offset from
+            // base), so a weight w contributes base + w*delta. (Storing absolute
+            // base+delta here would add an extra w*base term and explode the mesh.)
             std::vector<float> dp(vc * 3); idtx_mesh_get_blendshape_position_deltas(mesh, b, dp.data());
             PackedVector3Array bverts; bverts.resize(vc);
             for (int32_t i = 0; i < vc; ++i) {
-                bverts[i] = Vector3(verts[i].x + dp[i*3], verts[i].y + dp[i*3+1], verts[i].z + dp[i*3+2]);
+                bverts[i] = Vector3(dp[i*3], dp[i*3+1], dp[i*3+2]);
             }
             Array bs_arr; bs_arr.resize(Mesh::ARRAY_MAX);
             bs_arr[Mesh::ARRAY_VERTEX] = bverts;
@@ -262,7 +263,7 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
                 std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
                 PackedVector3Array bnorm; bnorm.resize(vc);
                 for (int32_t i = 0; i < vc; ++i) {
-                    bnorm[i] = Vector3(base_n[i*3] + dn[i*3], base_n[i*3+1] + dn[i*3+1], base_n[i*3+2] + dn[i*3+2]);
+                    bnorm[i] = Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
                 }
                 bs_arr[Mesh::ARRAY_NORMAL] = bnorm;
             }
