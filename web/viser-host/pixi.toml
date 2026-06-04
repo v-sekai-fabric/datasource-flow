@@ -12,9 +12,15 @@ platforms = ["win-64", "linux-64", "osx-arm64"]
 [dependencies]
 python = "3.11.*"
 numpy = ">=1.26"
+# Textured-mesh rendering: the host loads albedo PNGs (pillow) and builds GLB
+# meshes (trimesh) for the browser. Both are also viser deps; pinned here so the
+# web host's own use is explicit.
+trimesh = ">=4.0"
+pillow = ">=10.0"
 
 [pypi-dependencies]
 viser = "*"
+playwright = "*"
 
 [tasks]
 # Proof-of-concept: read the Miroir USD through libidtx_core and render it in

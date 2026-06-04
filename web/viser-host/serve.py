@@ -31,7 +31,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import trimesh
 import viser
+from PIL import Image
 
 # web/viser-host -> web -> repo root
 REPO = Path(__file__).resolve().parents[2]
@@ -71,6 +73,7 @@ def _bind_reader(lib) -> None:
         "idtx_mesh_get_bone_indices": ([c_void_p, i4], None),
         "idtx_mesh_get_weights": ([c_void_p, f4], None),
         "idtx_mesh_has_normals": ([c_void_p], c_int32),
+        "idtx_mesh_has_uvs": ([c_void_p], c_int32),
         "idtx_mesh_has_colors": ([c_void_p], c_int32),
         "idtx_mesh_get_blendshape_count": ([c_void_p], c_int32),
         "idtx_mesh_get_blendshape_name": ([c_void_p, c_int32], c_char_p),
@@ -83,6 +86,7 @@ def _bind_reader(lib) -> None:
         "idtx_skeleton_get_bone_bind": ([c_void_p, c_int32, f4], None),
         # material
         "idtx_material_get_base_color": ([c_void_p, f4], None),
+        "idtx_material_get_base_color_texture": ([c_void_p], c_char_p),
     }
     for fn, (argtypes, restype) in sigs.items():
         getattr(lib, fn).argtypes = argtypes
@@ -101,7 +105,42 @@ class MeshData:
     normals: np.ndarray | None   # (V,3) f32
     color: tuple[int, int, int]  # base color (0-255)
     skin: np.ndarray | None      # (V,B) f32 dense skin weights, or None
+    uvs: np.ndarray | None = None       # (V,2) f32
+    tex_path: str | None = None         # base-color texture file path
     blendshapes: list = field(default_factory=list)  # [(name, deltas (V,3))]
+
+
+# Albedo textures, loaded once per path (RGB PIL images).
+_TEXTURE_CACHE: dict[str, Image.Image | None] = {}
+
+
+def _load_texture(path: str | None) -> Image.Image | None:
+    if not path:
+        return None
+    if path not in _TEXTURE_CACHE:
+        try:
+            _TEXTURE_CACHE[path] = Image.open(path).convert("RGB")
+        except Exception as exc:  # missing / unreadable -> fall back to flat color
+            print(f"[idtx] texture load failed for {path}: {exc}")
+            _TEXTURE_CACHE[path] = None
+    return _TEXTURE_CACHE[path]
+
+
+def _textured_trimesh(md: "MeshData", verts: np.ndarray, image: Image.Image) -> trimesh.Trimesh:
+    """Build a double-sided, albedo-textured trimesh for GLB rendering. Double
+    sided so reversed winding never reads as 'inside out'; normals from the core
+    drive the shading."""
+    material = trimesh.visual.material.PBRMaterial(
+        baseColorTexture=image,
+        metallicFactor=0.0,
+        roughnessFactor=1.0,
+        doubleSided=True,
+    )
+    visual = trimesh.visual.TextureVisuals(uv=md.uvs, material=material, image=image)
+    kwargs = {"vertices": verts, "faces": md.faces, "visual": visual, "process": False}
+    if md.normals is not None:
+        kwargs["vertex_normals"] = md.normals
+    return trimesh.Trimesh(**kwargs)
 
 
 @dataclass
@@ -185,8 +224,15 @@ def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
         lib.idtx_mesh_get_normals(mesh, nrm)
         normals = np.ctypeslib.as_array(nrm).reshape(-1, 3).astype(np.float32).copy()
 
-    # Base color: material on this mesh, else a neutral skin tone.
+    uvs = None
+    if lib.idtx_mesh_has_uvs(mesh):
+        uv = (c_float * (vc * 2))()
+        lib.idtx_mesh_get_uvs(mesh, uv)
+        uvs = np.ctypeslib.as_array(uv).reshape(-1, 2).astype(np.float32).copy()
+
+    # Base color + albedo texture from the bound material.
     color = (200, 184, 168)
+    tex_path = None
     mat_idx = lib.idtx_avatar_get_mesh_material(avatar, i)
     if mat_idx >= 0:
         mat = lib.idtx_avatar_get_material(avatar, mat_idx)
@@ -194,6 +240,8 @@ def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
             rgba = (c_float * 4)()
             lib.idtx_material_get_base_color(mat, rgba)
             color = tuple(int(max(0.0, min(1.0, rgba[k])) * 255) for k in range(3))
+            t = lib.idtx_material_get_base_color_texture(mat)
+            tex_path = t.decode("utf-8") if t else None
 
     # Dense skin weights (V, num_bones) from the 4-per-vertex sparse channels.
     skin = None
@@ -219,7 +267,8 @@ def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
         deltas = np.ctypeslib.as_array(d).reshape(-1, 3).astype(np.float32).copy()
         blendshapes.append((bname, deltas))
 
-    return MeshData(name, verts, faces, normals, color, skin, blendshapes)
+    return MeshData(name, verts, faces, normals, color, skin,
+                    uvs=uvs, tex_path=tex_path, blendshapes=blendshapes)
 
 
 # --------------------------------------------------------------------------
@@ -282,15 +331,22 @@ class Host:
                     if w != 0.0:
                         verts = verts + w * deltas
             path = f"/{self.name}/{md.name}"
-            if md.skin is not None and bones:
+            image = _load_texture(md.tex_path)
+            if image is not None and md.uvs is not None:
+                # Textured render via GLB: shows the avatar's actual albedo and
+                # is double-sided, so reversed winding never reads "inside out".
+                h = self.server.scene.add_mesh_trimesh(path, _textured_trimesh(md, verts, image))
+            elif md.skin is not None and bones:
                 h = self.server.scene.add_mesh_skinned(
                     path, vertices=verts, faces=md.faces,
                     bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
                     skin_weights=md.skin, color=md.color, material="toon3",
+                    side="double",
                 )
             else:
                 h = self.server.scene.add_mesh_simple(
                     path, vertices=verts, faces=md.faces, color=md.color,
+                    side="double",
                 )
             self._nodes.append(h)
 
