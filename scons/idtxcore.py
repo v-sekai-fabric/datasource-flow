@@ -275,6 +275,11 @@ def _build_idtx_core(env, shared=True, static=True):
         env['idtx_core_lib_dir'] = os.path.abspath(build_dir)
         env['idtx_core_library_node'] = shared_lib
         shared_env.Default(shared_lib)
+        # `scons idtx_core` builds ONLY the core DLL (+ its deps), skipping the
+        # host-deploy installs (Unity Plugins / Godot addons). Those copies lock
+        # when an editor is open, which otherwise aborts the whole build — this
+        # lets you rebuild + retest the core while Godot/Unity stay running.
+        shared_env.Alias("idtx_core", shared_lib)
         targets.append(shared_lib)
 
         # Deploy the freshly-built native lib into the Unity package as the plain

@@ -579,7 +579,11 @@ namespace converter
 							fbs.nrm_offsets.push_back(TypeConverter::toVector3(bs.nrm[source_points[v]]));
 						}
 					}
-					if (!fbs.indices.empty()) { meshData.BlendShapes.push_back(std::move(fbs)); }
+					// Keep zero-delta targets too (e.g. VRChat's vrc.v_sil / vrc.v_pp):
+					// the NAME must survive the round-trip even when no vertex moves,
+					// or viseme / expression sets break downstream. Empty indices just
+					// means the host registers an all-zero morph.
+					meshData.BlendShapes.push_back(std::move(fbs));
 				}
 			}
 

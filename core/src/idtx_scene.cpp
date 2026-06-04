@@ -80,7 +80,9 @@ idtx_mesh_t* finalize_mesh(const S::FMeshData& md) {
     // Blend shapes: scatter the sparse SoA deltas back into the dense per-vertex
     // arrays the C ABI takes, then register each target with its current weight.
     for (const S::FBlendShape& bs : md.BlendShapes) {
-        if (bs.indices.empty()) continue;
+        // No early-out on empty indices: a zero-delta target (e.g. vrc.v_sil) is
+        // still authored and must round-trip by name. Empty indices => the dense
+        // arrays stay all-zero, registering a do-nothing morph that preserves it.
         const bool has_n = bs.has_normals && bs.nrm_offsets.size() == bs.indices.size();
         std::vector<float> bpos(static_cast<size_t>(vcount) * 3, 0.0f);
         std::vector<float> bnrm;
