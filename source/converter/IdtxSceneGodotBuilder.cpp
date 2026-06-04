@@ -188,6 +188,22 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     return out;
 }
 
+// A node always needs a non-empty name; an empty one makes Godot fall back to
+// "@ClassName@id" (which then bakes into the cached .tscn). Some USD prims have
+// no usable name (the default/pseudo-root, variant-composed prims), so fall back
+// to the prim path's leaf, then a generic default.
+String node_display_name(idtx_node_t* node) {
+    String name = String(idtx_node_get_name(node));
+    if (!name.strip_edges().is_empty()) {
+        return name;
+    }
+    name = String(idtx_node_get_path(node)).get_file();
+    if (!name.strip_edges().is_empty()) {
+        return name;
+    }
+    return String("UsdNode");
+}
+
 Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
     const idtx_node_kind_t kind = idtx_node_get_kind(node);
     float m[16]; idtx_node_get_local_transform(node, m);
@@ -323,7 +339,7 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     mi->set_mesh(mesh);
                     mi->set_skeleton(sk);
                     mi->set_name("Skin");
-                    sk->add_child(mi);
+                    sk->add_child(mi, true);
                     mi->set_skin(sk->create_skin_from_rest_transforms());
                 }
             }
@@ -363,7 +379,7 @@ std::vector<Node3D*> BuildGodotNodesFromScene(idtx_scene* scene) {
         Node3D* n = build_one(sc, node);
         built[i] = n;
         if (!n) continue;
-        n->set_name(String(idtx_node_get_name(node)));
+        n->set_name(node_display_name(node));
         n->set_meta("USD_NODE", true);
         if (IUsdNode3D* un = IUsdNode3D::from_node(n)) {
             un->set_prim_name(idtx_node_get_name(node));
@@ -375,7 +391,9 @@ std::vector<Node3D*> BuildGodotNodesFromScene(idtx_scene* scene) {
     for (int32_t i = 0; i < count; ++i) {
         if (!built[i]) continue;
         const int32_t p = idtx_node_get_parent(idtx_scene_get_node(sc, i));
-        if (p >= 0 && p < count && built[p]) built[p]->add_child(built[i]);
+        // force_readable_name = true: never let Godot fall back to "@Class@id"
+        // for a name (which then bakes into the cached .tscn).
+        if (p >= 0 && p < count && built[p]) built[p]->add_child(built[i], true);
         else roots.push_back(built[i]);
     }
 
