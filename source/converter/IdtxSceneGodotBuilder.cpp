@@ -15,7 +15,9 @@
 #include <godot_cpp/classes/cylinder_mesh.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/classes/mesh.hpp>
+#include <godot_cpp/classes/skin.hpp>
 #include <godot_cpp/core/math.hpp>
+#include <godot_cpp/variant/typed_array.hpp>
 
 #include "idtx_core/idtx_scene.h"
 #include "idtx_core/idtx_core.h"
@@ -132,7 +134,40 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
         for (int32_t i = 0; i < vc; ++i) cols[i] = Color(c[i*4], c[i*4+1], c[i*4+2], c[i*4+3]);
         arrays[Mesh::ARRAY_COLOR] = cols;
     }
-    out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+
+    // Skin influences (only present on skinned meshes; bpv==0 for static ones).
+    // Godot requires exactly 4 or 8 bones+weights per vertex; pad/clamp the
+    // core's per-vertex stride to whichever target fits, flagging 8-bone surfaces.
+    uint64_t flags = 0;
+    const int32_t bpv = idtx_mesh_get_bones_per_vertex(mesh);
+    if (bpv > 0) {
+        const int32_t target = (bpv <= 4) ? 4 : 8;
+        const int32_t copy = (bpv < target) ? bpv : target;
+        std::vector<int32_t> bi(vc * bpv);
+        std::vector<float> wt(vc * bpv);
+        idtx_mesh_get_bone_indices(mesh, bi.data());
+        idtx_mesh_get_weights(mesh, wt.data());
+        PackedInt32Array bones; bones.resize(vc * target);
+        PackedFloat32Array weights; weights.resize(vc * target);
+        for (int32_t v = 0; v < vc; ++v) {
+            for (int32_t k = 0; k < target; ++k) {
+                if (k < copy) {
+                    bones[v * target + k] = bi[v * bpv + k];
+                    weights[v * target + k] = wt[v * bpv + k];
+                } else {
+                    bones[v * target + k] = 0;
+                    weights[v * target + k] = 0.0f;
+                }
+            }
+        }
+        arrays[Mesh::ARRAY_BONES] = bones;
+        arrays[Mesh::ARRAY_WEIGHTS] = weights;
+        if (target == 8) {
+            flags |= Mesh::ARRAY_FLAG_USE_8_BONE_WEIGHTS;
+        }
+    }
+
+    out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(), Dictionary(), flags);
     return out;
 }
 
@@ -203,9 +238,10 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                 sk->reset_bone_poses();
             }
             sk->set_transform(xform);
-            // Attach the skinned mesh as a MeshInstance3D child so the geometry
-            // renders (in rest pose). Full GPU skin deformation needs a Skin
-            // resource + bone/weight arrays — a Phase 1b refinement.
+            // Attach the skinned mesh as a MeshInstance3D child and bind GPU skin
+            // deformation: build_array_mesh emits per-vertex bone/weight arrays, the
+            // MeshInstance points at this Skeleton3D (via _notification on parenting),
+            // and a Skin derived from the bone rests maps mesh space -> bone space.
             if (idtx_mesh_t* sm = idtx_node_get_skinned_mesh(node)) {
                 Ref<ArrayMesh> mesh = build_array_mesh(sm);
                 if (mesh->get_surface_count() > 0) {
@@ -215,6 +251,7 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                     mi->set_skeleton(sk);
                     mi->set_name("Skin");
                     sk->add_child(mi);
+                    mi->set_skin(sk->create_skin_from_rest_transforms());
                 }
             }
             return sk;
