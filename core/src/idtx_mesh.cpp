@@ -11,6 +11,7 @@
 struct idtx_blendshape
 {
     std::string        name;
+    float              weight = 0.0f;     // current/default weight; typically 0..1, not clamped
     std::vector<float> position_deltas;  // vertex_count*3
     std::vector<float> normal_deltas;     // vertex_count*3, may be empty
 };
@@ -109,6 +110,7 @@ extern "C" IDTX_CORE_API void idtx_mesh_set_skinning(
 extern "C" IDTX_CORE_API void idtx_mesh_add_blendshape(
     idtx_mesh_t* mesh,
     const char* name,
+    float weight,
     const float* position_deltas,
     const float* normal_deltas)
 {
@@ -116,9 +118,16 @@ extern "C" IDTX_CORE_API void idtx_mesh_add_blendshape(
     size_t n = static_cast<size_t>(mesh->vertex_count) * 3;
     idtx_blendshape bs;
     bs.name = (name != nullptr) ? name : "";
+    bs.weight = weight;
     copy_floats(bs.position_deltas, position_deltas, n);
     if (normal_deltas != nullptr) copy_floats(bs.normal_deltas, normal_deltas, n);
     mesh->blendshapes.push_back(std::move(bs));
+}
+
+extern "C" IDTX_CORE_API float idtx_mesh_get_blendshape_weight(const idtx_mesh_t* mesh, int32_t index)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return 0.0f;
+    return mesh->blendshapes[static_cast<size_t>(index)].weight;
 }
 
 extern "C" IDTX_CORE_API int32_t idtx_mesh_get_blendshape_count(const idtx_mesh_t* mesh)

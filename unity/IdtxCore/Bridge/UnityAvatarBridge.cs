@@ -61,7 +61,7 @@ namespace IdtxCore.Bridge
                 if (mesh == null) continue;
                 var mr = mf.GetComponent<MeshRenderer>();
                 Matrix4x4 bake = UnityToCanonical * worldToRoot * mf.transform.localToWorldMatrix;
-                AddMeshSurfaces(avatar.Handle, mesh, mf.gameObject.name, mr?.sharedMaterials, materialCache, null, null, bake);
+                AddMeshSurfaces(avatar.Handle, mesh, mf.gameObject.name, mr?.sharedMaterials, materialCache, null, null, bake, null);
             }
 
             // Skinned meshes (SkinnedMeshRenderer)
@@ -71,7 +71,7 @@ namespace IdtxCore.Bridge
                 if (mesh == null) continue;
                 Matrix4x4 bake = UnityToCanonical * worldToRoot * SkinnedGeomBind(smr);
                 AddMeshSurfaces(avatar.Handle, mesh, smr.gameObject.name, smr.sharedMaterials, materialCache,
-                                smr.bones, boneIndexInSkeleton, bake);
+                                smr.bones, boneIndexInSkeleton, bake, smr);
             }
 
             return avatar;
@@ -309,7 +309,8 @@ namespace IdtxCore.Bridge
             Dictionary<Material, int> materialCache,
             Transform[] smrBones,
             int[] boneIndexInSkeleton,
-            Matrix4x4 bake)
+            Matrix4x4 bake,
+            SkinnedMeshRenderer sourceRenderer)
         {
             int subCount = mesh.subMeshCount;
             // Bake mesh-local positions/normals into the canonical avatar-root
@@ -357,11 +358,13 @@ namespace IdtxCore.Bridge
             // holds the full vertex array).
             int shapeCount = mesh.blendShapeCount;
             string[] bsNames = null;
+            float[] bsWeights = null;
             float[][] bsPos = null;
             float[][] bsNrm = null;
             if (shapeCount > 0)
             {
                 bsNames = new string[shapeCount];
+                bsWeights = new float[shapeCount];
                 bsPos = new float[shapeCount][];
                 bsNrm = new float[shapeCount][];
                 var dV = new Vector3[mesh.vertexCount];
@@ -380,6 +383,12 @@ namespace IdtxCore.Bridge
                         nd[v * 3 + 0] = nrm.x; nd[v * 3 + 1] = nrm.y; nd[v * 3 + 2] = nrm.z;
                     }
                     bsNames[bsi] = mesh.GetBlendShapeName(bsi);
+                    // Current/default weight (Unity 0..100 -> 0..1; not clamped,
+                    // so over-driven/negative shapes survive). Static meshes have
+                    // no renderer-side weight, so default to 0.
+                    bsWeights[bsi] = sourceRenderer != null
+                        ? sourceRenderer.GetBlendShapeWeight(bsi) / 100f
+                        : 0f;
                     bsPos[bsi] = pd;
                     bsNrm[bsi] = nd;
                 }
@@ -410,7 +419,7 @@ namespace IdtxCore.Bridge
                 if (shapeCount > 0)
                 {
                     for (int bsi = 0; bsi < shapeCount; ++bsi)
-                        NativeMethods.idtx_mesh_add_blendshape(mh, bsNames[bsi], bsPos[bsi], bsNrm[bsi]);
+                        NativeMethods.idtx_mesh_add_blendshape(mh, bsNames[bsi], bsWeights[bsi], bsPos[bsi], bsNrm[bsi]);
                 }
 
                 int matIdx = -1;

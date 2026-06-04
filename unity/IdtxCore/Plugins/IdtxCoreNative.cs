@@ -150,6 +150,7 @@ namespace IdtxCore.Native
         public static extern void idtx_mesh_add_blendshape(
             MeshHandle mesh,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+            float weight,
             [In] float[] positionDeltas,
             [In] float[] normalDeltas);
 

@@ -162,6 +162,8 @@ IDTX_CORE_API void idtx_mesh_set_skinning(
 IDTX_CORE_API void idtx_mesh_add_blendshape(
     idtx_mesh_t* mesh,
     const char* name,
+    float weight,                   // current/default weight; typically 0..1 but
+                                    // not clamped (negative / >1 over-drive is valid)
     const float* position_deltas,   // required, vertex_count*3
     const float* normal_deltas);    // optional, NULL ok
 
@@ -201,6 +203,7 @@ IDTX_CORE_API int32_t idtx_mesh_has_colors (const idtx_mesh_t* mesh);
 // Blend-shape readback. Deltas buffers are vertex_count*3 floats.
 IDTX_CORE_API int32_t     idtx_mesh_get_blendshape_count(const idtx_mesh_t* mesh);
 IDTX_CORE_API const char* idtx_mesh_get_blendshape_name(const idtx_mesh_t* mesh, int32_t index);
+IDTX_CORE_API float       idtx_mesh_get_blendshape_weight(const idtx_mesh_t* mesh, int32_t index);
 IDTX_CORE_API int32_t     idtx_mesh_blendshape_has_normals(const idtx_mesh_t* mesh, int32_t index);
 IDTX_CORE_API void        idtx_mesh_get_blendshape_position_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);
 IDTX_CORE_API void        idtx_mesh_get_blendshape_normal_deltas(const idtx_mesh_t* mesh, int32_t index, float* out_deltas);

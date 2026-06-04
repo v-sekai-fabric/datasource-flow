@@ -39,12 +39,14 @@
 #include <pxr/usd/usdGeom/cylinder.h>
 #include <pxr/usd/usdGeom/scope.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdSkel/animation.h>
 #include <pxr/usd/usdSkel/bindingAPI.h>
 #include <pxr/usd/usdSkel/blendShape.h>
 #include <pxr/usd/usdSkel/root.h>
 #include <pxr/usd/usdSkel/skeleton.h>
 #include <pxr/usd/usdSkel/tokens.h>
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -773,6 +775,48 @@ static void author_avatar_tree(
 
             bind_mesh_to_skeleton(
                 stage, mp, skel_path, idtx_avatar_get_mesh(avatar, i));
+        }
+    }
+
+    // Blend-shape default weights -> a UsdSkelAnimation bound to the skeleton.
+    // skel:blendShapes on each mesh only DEFINES the morph targets; the current
+    // weights live on the animation (blendShapes + blendShapeWeights), which the
+    // skeleton references via skel:animationSource. Without it every importer
+    // shows weight 0 and the configured pose (e.g. an active Tail_Long=1.0) is
+    // lost. Aggregate weights by shape name across the skinned meshes.
+    if (!skel_path.IsEmpty()) {
+        std::map<std::string, float> shape_weight;
+        std::vector<std::string>     shape_order;
+        int32_t bs_mesh_count = idtx_avatar_get_mesh_count(avatar);
+        for (int32_t i = 0; i < bs_mesh_count; ++i) {
+            idtx_mesh_t const* mesh_h = idtx_avatar_get_mesh(avatar, i);
+            int32_t bsc = idtx_mesh_get_blendshape_count(mesh_h);
+            for (int32_t b = 0; b < bsc; ++b) {
+                std::string name = idtx_mesh_get_blendshape_name(mesh_h, b);
+                if (name.empty()) continue;
+                if (shape_weight.find(name) == shape_weight.end()) {
+                    shape_order.push_back(name);
+                }
+                shape_weight[name] = idtx_mesh_get_blendshape_weight(mesh_h, b);
+            }
+        }
+        if (!shape_order.empty()) {
+            pxr::SdfPath anim_path = skel_root_path.AppendChild(pxr::TfToken("BlendWeights"));
+            pxr::UsdSkelAnimation anim = pxr::UsdSkelAnimation::Define(stage, anim_path);
+            pxr::VtArray<pxr::TfToken> names;
+            pxr::VtArray<float>        weights;
+            names.reserve(shape_order.size());
+            weights.reserve(shape_order.size());
+            for (const std::string& nm : shape_order) {
+                names.push_back(pxr::TfToken(nm));
+                weights.push_back(shape_weight[nm]);
+            }
+            anim.CreateBlendShapesAttr().Set(names);
+            anim.CreateBlendShapeWeightsAttr().Set(weights);
+            if (pxr::UsdPrim skel_prim = stage->GetPrimAtPath(skel_path)) {
+                pxr::UsdSkelBindingAPI skel_binding = pxr::UsdSkelBindingAPI::Apply(skel_prim);
+                skel_binding.CreateAnimationSourceRel().SetTargets({anim_path});
+            }
         }
     }
 
