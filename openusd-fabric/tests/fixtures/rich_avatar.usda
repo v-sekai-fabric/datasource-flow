@@ -1,0 +1,173 @@
+#usda 1.0
+(
+    """
+    Richer V-Sekai fixture: multiple springbone chains, multiple
+    colliders, multiple materials of different kinds. Exists to catch
+    interactions the minimal fixture misses — multi-collider
+    cross-references, MToon vs PBR coexistence, more than one chain
+    sharing the same collider, and the no-marker negative case for both
+    materials and joints.
+
+    Geometry is still a placeholder; the schema payload is the point.
+
+    Copyright 2026 The openusd-fabric authors.
+    SPDX-License-Identifier: MIT
+    """
+    defaultPrim = "Avatar"
+    metersPerUnit = 1.0
+    upAxis = "Y"
+)
+
+def Xform "Avatar"
+{
+    def SkelRoot "Skel"
+    {
+        def Skeleton "Skeleton"
+        {
+            uniform token[] joints = [
+                "Root",
+                "Root/Spine",
+                "Root/Spine/Chest",
+                "Root/Spine/Chest/Neck",
+                "Root/Spine/Chest/Neck/Head",
+                "Root/Spine/Chest/Neck/Head/Hair_L_0",
+                "Root/Spine/Chest/Neck/Head/Hair_L_1",
+                "Root/Spine/Chest/Neck/Head/Hair_R_0",
+                "Root/Spine/Chest/Neck/Head/Hair_R_1",
+                "Root/Spine/Skirt_F_0",
+                "Root/Spine/Skirt_F_1",
+                "Root/Spine/Skirt_B_0",
+                "Root/Spine/Skirt_B_1"
+            ]
+        }
+
+        # Two hair chains. Both reference the same head collider, and the
+        # left chain additionally references the chest collider, so the
+        # importer has to handle many-to-many chain<->collider topology.
+        def Xform "Hair_L_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        )
+        {
+            float v_sekai:springBone:stiffness = 0.7
+            float v_sekai:springBone:drag = 0.45
+            float v_sekai:springBone:gravityPower = 0.05
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.015
+            rel v_sekai:springBone:colliders = [
+                </Avatar/Skel/HeadCollider>,
+                </Avatar/Skel/ChestCollider>,
+            ]
+        }
+
+        def Xform "Hair_R_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        )
+        {
+            float v_sekai:springBone:stiffness = 0.7
+            float v_sekai:springBone:drag = 0.45
+            float v_sekai:springBone:gravityPower = 0.05
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.015
+            rel v_sekai:springBone:colliders = [ </Avatar/Skel/HeadCollider> ]
+        }
+
+        # Skirt chain — different stiffness, inside-collider for the
+        # chest cavity so cloth wraps the torso instead of clipping
+        # through it.
+        def Xform "Skirt_F_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        )
+        {
+            float v_sekai:springBone:stiffness = 0.4
+            float v_sekai:springBone:drag = 0.7
+            float v_sekai:springBone:gravityPower = 0.6
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.025
+            rel v_sekai:springBone:colliders = [
+                </Avatar/Skel/ChestCollider>,
+                </Avatar/Skel/HipCavityCollider>,
+            ]
+        }
+
+        # Plain joint - no springbone marker. Negative case: HasAPI
+        # must return False on this one.
+        def Xform "Skirt_B_Chain"
+        {
+        }
+
+        def Xform "HeadCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        )
+        {
+            token v_sekai:springBone:collider:shape = "sphere"
+            float v_sekai:springBone:collider:radius = 0.10
+            vector3f v_sekai:springBone:collider:offset = (0, 1.7, 0)
+        }
+
+        def Xform "ChestCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        )
+        {
+            token v_sekai:springBone:collider:shape = "capsule"
+            float v_sekai:springBone:collider:radius = 0.13
+            vector3f v_sekai:springBone:collider:offset = (0, 1.3, 0)
+            vector3f v_sekai:springBone:collider:tail = (0, 1.5, 0)
+        }
+
+        def Xform "HipCavityCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        )
+        {
+            token v_sekai:springBone:collider:shape = "sphere"
+            float v_sekai:springBone:collider:radius = 0.18
+            vector3f v_sekai:springBone:collider:offset = (0, 1.0, 0)
+            bool v_sekai:springBone:collider:inside = true
+        }
+    }
+
+    def Scope "Materials"
+    {
+        def Material "Face_MToon" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        )
+        {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.85, 0.75, 0.7)
+            float v_sekai:mtoon:shadingShiftFactor = -0.1
+            float v_sekai:mtoon:shadingToonyFactor = 0.95
+            float v_sekai:mtoon:giEqualizationFactor = 0.9
+            color3f v_sekai:mtoon:parametricRimColorFactor = (0.2, 0.2, 0.3)
+            float v_sekai:mtoon:parametricRimFresnelPowerFactor = 2.0
+            token v_sekai:mtoon:outlineWidthMode = "screenCoordinates"
+            float v_sekai:mtoon:outlineWidthFactor = 0.002
+            color3f v_sekai:mtoon:outlineColorFactor = (0.05, 0.02, 0.02)
+            bool v_sekai:mtoon:transparentWithZWrite = false
+        }
+
+        def Material "Hair_MToon" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        )
+        {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.3, 0.2, 0.4)
+            float v_sekai:mtoon:shadingToonyFactor = 0.85
+            token v_sekai:mtoon:outlineWidthMode = "worldCoordinates"
+            float v_sekai:mtoon:outlineWidthFactor = 0.0008
+            color3f v_sekai:mtoon:outlineColorFactor = (0.1, 0.05, 0.15)
+            int v_sekai:mtoon:renderQueueOffsetNumber = -1
+        }
+
+        def Material "Eyelash_MToon_Transparent" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        )
+        {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.05, 0.05, 0.05)
+            token v_sekai:mtoon:outlineWidthMode = "none"
+            bool v_sekai:mtoon:transparentWithZWrite = true
+            int v_sekai:mtoon:renderQueueOffsetNumber = 1
+        }
+
+        # Negative case material; must not pick up VSekaiMToonAPI.
+        def Material "Body_PBR"
+        {
+        }
+    }
+}

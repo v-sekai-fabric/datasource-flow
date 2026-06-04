@@ -1,0 +1,149 @@
+# Copyright 2026 The openusd-fabric authors.
+# SPDX-License-Identifier: MIT
+#
+# Phase 1 CI gate: validate that every fixture .usda passes usdchecker
+# (USD syntax + composition) and that the V-Sekai codeless schema plugin
+# loads cleanly (HasAPI / attribute round-trip via scripts/check_schemas.py).
+#
+# This runs on every push and PR. Round-trip diff against idtx-flow's
+# import/export is added later (Phase 4, post-CHI-252).
+
+name: usdchecker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install USD Python bindings + test deps
+        run: |
+          pip install --upgrade pip
+          pip install "usd-core>=24.05" "numpy>=1.26" "hypothesis>=6.100" pytest
+
+      - name: Run usdchecker on every fixture
+        env:
+          PXR_PLUGINPATH_NAME: ${{ github.workspace }}/schema
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fixtures=(tests/fixtures/*.usda)
+          if [ ${#fixtures[@]} -eq 0 ]; then
+            echo "No fixtures under tests/fixtures/; nothing to check."
+            exit 1
+          fi
+          for f in "${fixtures[@]}"; do
+            echo "==> usdchecker --arkit=false $f"
+            usdchecker --arkit=false "$f"
+          done
+
+      - name: Verify codeless plugin loads + attributes round-trip
+        env:
+          PXR_PLUGINPATH_NAME: ${{ github.workspace }}/schema
+        run: python scripts/check_schemas.py
+
+      - name: JFA outline reference + property tests (CHI-255)
+        run: pytest tests/slang_validate/test_outline_jfa.py -v
+
+      - name: Round-trip diff (hook must not mutate pre-applied fixtures)
+        env:
+          PXR_PLUGINPATH_NAME: ${{ github.workspace }}/schema
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p .roundtrip
+          for f in tests/fixtures/*.usda; do
+            name=$(basename "$f" .usda)
+            cp "$f" ".roundtrip/${name}.in.usda"
+            usdcat --flatten ".roundtrip/${name}.in.usda" \
+              > ".roundtrip/${name}.before.flat.usda"
+            python blender/post_export_hook.py \
+              --in ".roundtrip/${name}.in.usda"
+            usdcat --flatten ".roundtrip/${name}.in.usda" \
+              > ".roundtrip/${name}.after.flat.usda"
+            diff -u ".roundtrip/${name}.before.flat.usda" \
+                    ".roundtrip/${name}.after.flat.usda"
+          done
+
+  lean-build-and-emit-diff:
+    # Cycle 1+2 gate moved into CI: every push must build the Lean Lake
+    # project and prove the emitted maps/*.json + schema/*.{py,hpp}
+    # match what is committed under maps/ + scripts/. Catches the
+    # moment a Lean spec edit diverges from a hand-edited artifact.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan + Lean toolchain
+        run: |
+          set -euo pipefail
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | bash -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache .lake build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake
+            ~/.elan
+          key: lean-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain', 'lean/lakefile.lean', 'lean/lake-manifest.json') }}
+          restore-keys: |
+            lean-${{ runner.os }}-
+
+      - name: Resolve toolchain (elan installs the Lean version from lean-toolchain)
+        run: cd lean && lean --version
+
+      - name: lake build
+        run: cd lean && lake build
+
+      - name: lake exe emit_artifacts -> build/
+        run: cd lean && lake exe emit_artifacts ../build
+
+      - name: Diff emitted maps against committed maps/
+        run: |
+          set -euo pipefail
+          for emitted in build/maps/*.json; do
+            committed="maps/$(basename "$emitted")"
+            if ! diff -u "$committed" "$emitted"; then
+              echo "::error::Emitted $emitted differs from committed $committed."
+              echo "Run \`lake exe emit_artifacts build\` locally and commit the diff."
+              exit 1
+            fi
+          done
+
+  blender-hook-import:
+    # Smoke-checks that the post-export hook imports cleanly under the
+    # same pxr build CI uses. Does not exercise Blender itself yet —
+    # that gets a separate job once Phase 1 freezes a Blender pin.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install USD Python bindings
+        run: |
+          pip install --upgrade pip
+          pip install "usd-core>=24.05"
+
+      - name: Import blender/post_export_hook.py
+        run: python -c "import importlib.util, pathlib; \
+          spec = importlib.util.spec_from_file_location('h', \
+          'blender/post_export_hook.py'); \
+          m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); \
+          print('hook module imported OK; entry point:', m.apply_v_sekai_schemas)"

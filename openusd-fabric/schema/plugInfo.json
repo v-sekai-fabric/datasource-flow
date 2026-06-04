@@ -1,0 +1,35 @@
+{
+    "Plugins": [
+        {
+            "Name": "vSekaiUsd",
+            "Type": "resource",
+            "Info": {
+                "UsdSchemas": {
+                    "schemaPath": "./generatedSchema.usda"
+                },
+                "Types": {
+                    "VSekaiMToonAPI": {
+                        "bases": ["UsdAPISchemaBase"],
+                        "schemaKind": "singleApplyAPI",
+                        "schemaIdentifier": "VSekaiMToonAPI"
+                    },
+                    "VSekaiMToonScssExtensionAPI": {
+                        "bases": ["UsdAPISchemaBase"],
+                        "schemaKind": "singleApplyAPI",
+                        "schemaIdentifier": "VSekaiMToonScssExtensionAPI"
+                    },
+                    "VSekaiSpringBoneAPI": {
+                        "bases": ["UsdAPISchemaBase"],
+                        "schemaKind": "singleApplyAPI",
+                        "schemaIdentifier": "VSekaiSpringBoneAPI"
+                    },
+                    "VSekaiSpringBoneColliderAPI": {
+                        "bases": ["UsdAPISchemaBase"],
+                        "schemaKind": "singleApplyAPI",
+                        "schemaIdentifier": "VSekaiSpringBoneColliderAPI"
+                    }
+                }
+            }
+        }
+    ]
+}

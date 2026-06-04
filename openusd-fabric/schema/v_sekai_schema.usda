@@ -1,0 +1,312 @@
+#usda 1.0
+(
+    """
+    V-Sekai USD codeless API schemas.
+
+    Defines three single-apply API schemas carrying V-Sekai-specific data
+    that core USD does not model natively: MToon shader uniforms,
+    spring-bone simulation parameters, and spring-bone colliders.
+
+    All three classes set `skipCodeGeneration = true` so the schema loads
+    through the generic UsdAttribute / UsdPrim.ApplyAPI() API and avoids
+    the ABI trap between Blender's bundled USD, Unity's bundled USD, and
+    the build idtx-flow links against.
+
+    See CHI-250 (design) and CHI-251 (cross-engine implementation).
+
+    Copyright 2026 The openusd-fabric authors.
+    SPDX-License-Identifier: MIT
+    """
+    subLayers = [
+        # Pull in APISchemaBase + other built-in USD schemas so
+        # usdGenSchema can resolve our inherits-from references at
+        # codeless-schema generation time. Resolved via the asset
+        # resolver against the USD core plugins on PXR_PLUGINPATH_NAME.
+        @usd/schema.usda@
+    ]
+)
+
+over "GLOBAL" (
+    customData = {
+        string libraryName = "vSekaiUsd"
+        string libraryPath  = "."
+        string libraryPrefix = "VSekai"
+        bool skipCodeGeneration = true
+        bool useLiteralIdentifier = false
+    }
+)
+{
+}
+
+class "VSekaiMToonAPI" (
+    inherits = </APISchemaBase>
+    customData = {
+        token apiSchemaType = "singleApply"
+        bool skipCodeGeneration = true
+    }
+    doc = """API schema carrying VRM 1.0 MToon shader uniforms from V-Sekai
+    materials.
+
+    Applied to UsdShade Material prims (or their primary surface Shader
+    child). Attribute names mirror the VRM 1.0 MToon spec field names so
+    the Blender hook (post vrm-addon-for-blender export), idtx-flow's
+    Godot mapper (which feeds godot-vrm's MToon shader), and the Unity
+    schema mapper (UniVRM10) agree on the wire representation without a
+    per-host translation layer.
+
+    VRM 0.x assets are upgraded to VRM 1.0 / MToon 1.0 at the import
+    boundary per CHI-252's upgrade tables; this schema only models the
+    1.0 surface."""
+)
+{
+    color3f v_sekai:mtoon:shadeColorFactor = (1.0, 1.0, 1.0) (
+        doc = "Shade colour (tinted region in toon shading)."
+    )
+    asset v_sekai:mtoon:shadeMultiplyTexture = @@ (
+        doc = "Optional shade-region texture multiplied with shadeColorFactor."
+    )
+    float v_sekai:mtoon:shadingShiftFactor = 0.0 (
+        doc = "Shading shift along the lighting axis; range [-1, 1]."
+    )
+    asset v_sekai:mtoon:shadingShiftTexture = @@ (
+        doc = "Per-texel shading-shift offset added to shadingShiftFactor."
+    )
+    float v_sekai:mtoon:shadingShiftTextureScale = 1.0
+    float v_sekai:mtoon:shadingToonyFactor = 0.9 (
+        doc = "Sharpness of the lit/shade boundary; range [0, 1]."
+    )
+    float v_sekai:mtoon:giEqualizationFactor = 0.9 (
+        doc = "Tonemap of ambient/global-illumination contribution; range [0, 1]."
+    )
+
+    color3f v_sekai:mtoon:matcapFactor = (1.0, 1.0, 1.0)
+    asset v_sekai:mtoon:matcapTexture = @@ (
+        doc = "Matcap texture sampled by view-space normal."
+    )
+
+    asset v_sekai:mtoon:rimMultiplyTexture = @@
+    float v_sekai:mtoon:rimLightingMixFactor = 0.0 (
+        doc = "Mix between scene lighting and constant rim; range [0, 1]."
+    )
+    color3f v_sekai:mtoon:parametricRimColorFactor = (0.0, 0.0, 0.0) (
+        doc = "Parametric rim colour, applied even without a rim texture."
+    )
+    float v_sekai:mtoon:parametricRimFresnelPowerFactor = 1.0 (
+        doc = "Fresnel exponent for parametric rim falloff."
+    )
+    float v_sekai:mtoon:parametricRimLiftFactor = 0.0 (
+        doc = "Constant lift added to the parametric rim term; range [0, 1]."
+    )
+
+    token v_sekai:mtoon:outlineWidthMode = "none" (
+        allowedTokens = ["none", "worldCoordinates", "screenCoordinates"]
+        doc = """Outline projection space, or `none` to disable the
+        outline pass. Under the CHI-255 JFA renderer path both modes
+        produce a per-pixel outline width: `worldCoordinates` resolves
+        outlineWidthFactor (in metres) to a pixel count using the
+        silhouette's view-space depth and the camera's vertical FoV,
+        `screenCoordinates` treats outlineWidthFactor directly as
+        normalised viewport units. The exported-`.vrm` VRChat fallback
+        still differentiates the two as backface-extrusion modes."""
+    )
+    float v_sekai:mtoon:outlineWidthFactor = 0.0 (
+        doc = """Outline thickness in the chosen mode's units. VRM 1.0
+        units: metres for worldCoordinates, normalised viewport units
+        (typically `[0, 1]`) for screenCoordinates. The JFA shader
+        converts both to pixels at the silhouette pixel itself."""
+    )
+    asset v_sekai:mtoon:outlineWidthMultiplyTexture = @@ (
+        doc = "Per-texel outline-width modulation."
+    )
+    color3f v_sekai:mtoon:outlineColorFactor = (0.0, 0.0, 0.0)
+    float v_sekai:mtoon:outlineLightingMixFactor = 1.0
+
+    asset v_sekai:mtoon:uvAnimationMaskTexture = @@
+    float v_sekai:mtoon:uvAnimationScrollXSpeedFactor = 0.0
+    float v_sekai:mtoon:uvAnimationScrollYSpeedFactor = 0.0
+    float v_sekai:mtoon:uvAnimationRotationSpeedFactor = 0.0
+
+    int v_sekai:mtoon:renderQueueOffsetNumber = 0 (
+        doc = "Optional render-queue bias for transparent sorting tweaks."
+    )
+    bool v_sekai:mtoon:transparentWithZWrite = false (
+        doc = "If true, transparent surface writes depth (sharper sorting)."
+    )
+}
+
+class "VSekaiMToonScssExtensionAPI" (
+    inherits = </APISchemaBase>
+    customData = {
+        token apiSchemaType = "singleApply"
+        bool skipCodeGeneration = true
+    }
+    doc = """Sidecar API for the SCSS-only parameters that have no
+    VRM 1.0 MToon analogue. Applied **alongside** `VSekaiMToonAPI` on a
+    material whose original DCC source was Silent's Cel Shading Shader
+    (gitlab.com/s-ilent/SCSS). The canonical SCSS <-> MToon mapping
+    (`maps/scss_mtoon_map.json`) covers the lossless parameter subset;
+    this extension carries the rest so a SCSS material round-trips
+    through openusd-fabric without dropping data the artist
+    deliberately set.
+
+    The V-Sekai usd-converter-for-vrchat fork checks for this API on
+    re-import and restores the SCSS-only knobs on the resulting Unity
+    material; consumers that only speak MToon (`idtx-flow`, hdStorm)
+    safely ignore it."""
+)
+{
+    # Light ramp LUT (the SCSS shading look is driven by a ramp texture
+    # rather than MToon's shadingShift + shadingToony scalars).
+    asset v_sekai:mtoon:scss:rampTexture = @@
+    token v_sekai:mtoon:scss:lightRampType = "horizontal" (
+        allowedTokens = ["horizontal", "vertical", "none"]
+        doc = "Direction the SCSS light ramp samples."
+    )
+
+    # Additional matcap slots 2..4 (slot 1 maps to the canonical MToon
+    # matcapTexture/Factor in VSekaiMToonAPI).
+    asset v_sekai:mtoon:scss:matcap2Texture = @@
+    color3f v_sekai:mtoon:scss:matcap2Tint = (1.0, 1.0, 1.0)
+    float v_sekai:mtoon:scss:matcap2Strength = 1.0
+    token v_sekai:mtoon:scss:matcap2BlendMode = "additive" (
+        allowedTokens = ["additive", "multiply", "median"]
+    )
+    asset v_sekai:mtoon:scss:matcap3Texture = @@
+    color3f v_sekai:mtoon:scss:matcap3Tint = (1.0, 1.0, 1.0)
+    float v_sekai:mtoon:scss:matcap3Strength = 1.0
+    token v_sekai:mtoon:scss:matcap3BlendMode = "additive" (
+        allowedTokens = ["additive", "multiply", "median"]
+    )
+    asset v_sekai:mtoon:scss:matcap4Texture = @@
+    color3f v_sekai:mtoon:scss:matcap4Tint = (1.0, 1.0, 1.0)
+    float v_sekai:mtoon:scss:matcap4Strength = 1.0
+    token v_sekai:mtoon:scss:matcap4BlendMode = "additive" (
+        allowedTokens = ["additive", "multiply", "median"]
+    )
+
+    # Hatching (cross-hatch emulation, time-animated).
+    asset v_sekai:mtoon:scss:hatchingTexture = @@
+    float v_sekai:mtoon:scss:hatchingScale = 1.0
+    int v_sekai:mtoon:scss:hatchingMovementFps = 5
+    float v_sekai:mtoon:scss:hatchingShadingAdd = 1.0
+    float v_sekai:mtoon:scss:hatchingShadingMul = 0.0
+    float v_sekai:mtoon:scss:hatchingRimAdd = 1.0
+    float v_sekai:mtoon:scss:hatchingAlbedoMul = 0.0
+
+    # Alpha fresnel (SCSS-specific transparency edge effect).
+    bool v_sekai:mtoon:scss:useAlphaFresnel = false
+    float v_sekai:mtoon:scss:alphaFresnelWidth = 1.0
+    float v_sekai:mtoon:scss:alphaFresnelSharpness = 0.0
+    float v_sekai:mtoon:scss:alphaFresnelStrength = 0.5
+    float v_sekai:mtoon:scss:alphaFresnelThreshold = 1.0
+    bool v_sekai:mtoon:scss:alphaFresnelInvert = false
+
+    # AudioLink emissive — VRChat-world reactive emission.
+    bool v_sekai:mtoon:scss:useAudiolink = false
+    float v_sekai:mtoon:scss:audiolinkIntensity = 1.0
+    asset v_sekai:mtoon:scss:audiolinkMaskTexture = @@
+    int v_sekai:mtoon:scss:audiolinkMaskUv = 0
+
+    # SDF face mode (the anime-eye look — SDF-driven shadow / outline
+    # masking from a per-face direction vector).
+    token v_sekai:mtoon:scss:sdfMode = "off" (
+        allowedTokens = ["off", "outline", "shadow"]
+    )
+    float v_sekai:mtoon:scss:sdfSmoothness = 0.01
+    int v_sekai:mtoon:scss:sdfFrontVector = 4 (
+        doc = "SCSS cardinal-direction enum index for the SDF front axis."
+    )
+    int v_sekai:mtoon:scss:sdfRightVector = 1 (
+        doc = "SCSS cardinal-direction enum index for the SDF right axis."
+    )
+
+    # Detail maps — up to four with independent UV / type / blend / power.
+    asset v_sekai:mtoon:scss:detailMap1Texture = @@
+    int v_sekai:mtoon:scss:detailMap1Uv = 0
+    token v_sekai:mtoon:scss:detailMap1Type = "albedo" (
+        allowedTokens = ["albedo", "normal", "specular"]
+    )
+    token v_sekai:mtoon:scss:detailMap1Blend = "multiply" (
+        allowedTokens = ["multiply", "add", "overlay"]
+    )
+    float v_sekai:mtoon:scss:detailMap1Strength = 1.0
+    asset v_sekai:mtoon:scss:detailMap2Texture = @@
+    int v_sekai:mtoon:scss:detailMap2Uv = 0
+    token v_sekai:mtoon:scss:detailMap2Type = "albedo" (
+        allowedTokens = ["albedo", "normal", "specular"]
+    )
+    token v_sekai:mtoon:scss:detailMap2Blend = "multiply" (
+        allowedTokens = ["multiply", "add", "overlay"]
+    )
+    float v_sekai:mtoon:scss:detailMap2Strength = 1.0
+}
+
+class "VSekaiSpringBoneAPI" (
+    inherits = </APISchemaBase>
+    customData = {
+        token apiSchemaType = "singleApply"
+        bool skipCodeGeneration = true
+    }
+    doc = """API schema marking a joint as the root of a spring-bone chain.
+
+    Carries the VRM 1.0 springbone parameters. Collider references are
+    expressed as USD relationships into prims that themselves have
+    VSekaiSpringBoneColliderAPI applied; this is the same indirection VRM
+    1.0 uses (colliderGroups → colliders) and lets a chain reference
+    colliders parented outside its own subtree."""
+)
+{
+    float v_sekai:springBone:stiffness = 1.0 (
+        doc = "Per-step pull toward rest pose; range [0, 1]."
+    )
+    float v_sekai:springBone:drag = 0.4 (
+        doc = "Velocity damping per step; range [0, 1]."
+    )
+    float v_sekai:springBone:gravityPower = 0.0 (
+        doc = "Scalar gravity magnitude; positive accelerates along gravityDir."
+    )
+    vector3f v_sekai:springBone:gravityDir = (0.0, -1.0, 0.0) (
+        doc = "World-space gravity direction (need not be unit length)."
+    )
+    float v_sekai:springBone:hitRadius = 0.02 (
+        doc = "Per-joint collision radius in metres."
+    )
+    rel v_sekai:springBone:center (
+        doc = "Optional centre transform; chain motion is computed relative to it."
+    )
+    rel v_sekai:springBone:colliders (
+        doc = "Array of relationships to VSekaiSpringBoneColliderAPI prims."
+    )
+}
+
+class "VSekaiSpringBoneColliderAPI" (
+    inherits = </APISchemaBase>
+    customData = {
+        token apiSchemaType = "singleApply"
+        bool skipCodeGeneration = true
+    }
+    doc = """API schema marking a joint as a spring-bone collider.
+
+    Shape selects sphere, capsule, or plane; the remaining attributes are
+    interpreted per shape:
+      sphere : offset + radius
+      capsule: offset + tail + radius
+      plane  : offset + normal
+    `inside` flips collision sense (used for chest/skirt cavities)."""
+)
+{
+    token v_sekai:springBone:collider:shape = "sphere" (
+        allowedTokens = ["sphere", "capsule", "plane"]
+    )
+    float v_sekai:springBone:collider:radius = 0.05
+    vector3f v_sekai:springBone:collider:offset = (0.0, 0.0, 0.0)
+    vector3f v_sekai:springBone:collider:tail = (0.0, 0.0, 0.0) (
+        doc = "Capsule tail offset (ignored for sphere/plane)."
+    )
+    vector3f v_sekai:springBone:collider:normal = (0.0, 1.0, 0.0) (
+        doc = "Plane normal (ignored for sphere/capsule)."
+    )
+    bool v_sekai:springBone:collider:inside = false (
+        doc = "Invert collision direction (chest/skirt-cavity colliders)."
+    )
+}

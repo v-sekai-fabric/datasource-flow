@@ -1,0 +1,231 @@
+#usda 1.0
+(
+    """
+    Schema-essence fixture distilled from V-Sekai's `Mille 'Mire' Feuille`
+    avatar (https://github.com/V-Sekai-fire/mesh-mille-mire-feuille,
+    Apache-2.0 by Mohka/Kuro Insula). Captures the material set names,
+    springbone-chain shape, and collider topology of a real V-Sekai
+    avatar so the V-Sekai USD schema is exercised against representative
+    payloads without committing the 30 MB .blend.
+
+    What's preserved from the real model:
+      * 17 material prims with Mire's exact `Mire.Mt.*` naming;
+        VSekaiMToonAPI applied to the three typical MToon-heavy
+        materials (Face / Hair / Eyes) with placeholder values, the
+        rest left as plain PBR.
+      * Hair / skirt / ear / tail springbone-chain root prims, named
+        after Mire's bones, each with VSekaiSpringBoneAPI.
+      * Three colliders covering the head, chest, and hip cavity.
+      * Bone-name relationships from chain -> collider that match a
+        realistic VRM 1.0 springbone topology.
+
+    What's NOT preserved (intentional; recovered by the full-avatar
+    integration test via `pixi run fetch-mire`):
+      * Mesh geometry, UVs, weights, blendshapes, textures.
+      * The full 117-bone armature; only the springbone-bearing chain
+        roots appear here.
+      * Actual MToon factor values from the .unitypackage; placeholders
+        match the schema defaults plus a per-material colour tweak so
+        each material is distinguishable on inspection.
+
+    Copyright 2026 The openusd-fabric authors. (essence fixture)
+    Mire model copyright 2024 Mohka / Kuro Insula, Apache-2.0.
+    SPDX-License-Identifier: MIT
+    """
+    defaultPrim = "Mire"
+    metersPerUnit = 1.0
+    upAxis = "Y"
+)
+
+def Xform "Mire"
+{
+    def SkelRoot "Skel"
+    {
+        def Skeleton "Skeleton"
+        {
+            uniform token[] joints = [
+                "Root", "Root/Hips", "Root/Hips/Spine",
+                "Root/Hips/Spine/Chest", "Root/Hips/Spine/Chest/Neck",
+                "Root/Hips/Spine/Chest/Neck/Head"
+            ]
+        }
+
+        # ----- Hair chains -----
+        def Xform "Hair_Front_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.65
+            float v_sekai:springBone:drag = 0.4
+            float v_sekai:springBone:gravityPower = 0.03
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.012
+            rel v_sekai:springBone:colliders = [ </Mire/Skel/HeadCollider> ]
+        }
+        def Xform "Hair_Back_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.55
+            float v_sekai:springBone:drag = 0.5
+            float v_sekai:springBone:gravityPower = 0.04
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.018
+            rel v_sekai:springBone:colliders = [
+                </Mire/Skel/HeadCollider>,
+                </Mire/Skel/ChestCollider>,
+            ]
+        }
+        def Xform "Hair_Side_L_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.7
+            float v_sekai:springBone:drag = 0.4
+            float v_sekai:springBone:hitRadius = 0.01
+            rel v_sekai:springBone:colliders = [ </Mire/Skel/HeadCollider> ]
+        }
+        def Xform "Hair_Side_R_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.7
+            float v_sekai:springBone:drag = 0.4
+            float v_sekai:springBone:hitRadius = 0.01
+            rel v_sekai:springBone:colliders = [ </Mire/Skel/HeadCollider> ]
+        }
+
+        # ----- Skirt chains -----
+        def Xform "Skirt_F_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.35
+            float v_sekai:springBone:drag = 0.7
+            float v_sekai:springBone:gravityPower = 0.5
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.025
+            rel v_sekai:springBone:colliders = [
+                </Mire/Skel/ChestCollider>,
+                </Mire/Skel/HipCavityCollider>,
+            ]
+        }
+        def Xform "Skirt_B_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.35
+            float v_sekai:springBone:drag = 0.7
+            float v_sekai:springBone:gravityPower = 0.5
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.025
+            rel v_sekai:springBone:colliders = [
+                </Mire/Skel/HipCavityCollider>,
+            ]
+        }
+
+        # ----- Ears & tail -----
+        def Xform "Ear_L_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.85
+            float v_sekai:springBone:drag = 0.3
+            float v_sekai:springBone:hitRadius = 0.008
+            rel v_sekai:springBone:colliders = [ </Mire/Skel/HeadCollider> ]
+        }
+        def Xform "Ear_R_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.85
+            float v_sekai:springBone:drag = 0.3
+            float v_sekai:springBone:hitRadius = 0.008
+            rel v_sekai:springBone:colliders = [ </Mire/Skel/HeadCollider> ]
+        }
+        def Xform "Tail_Chain" (
+            prepend apiSchemas = ["VSekaiSpringBoneAPI"]
+        ) {
+            float v_sekai:springBone:stiffness = 0.5
+            float v_sekai:springBone:drag = 0.55
+            float v_sekai:springBone:gravityPower = 0.15
+            vector3f v_sekai:springBone:gravityDir = (0, -1, 0)
+            float v_sekai:springBone:hitRadius = 0.02
+            rel v_sekai:springBone:colliders = [
+                </Mire/Skel/HipCavityCollider>,
+            ]
+        }
+
+        # ----- Colliders -----
+        def Xform "HeadCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        ) {
+            token v_sekai:springBone:collider:shape = "sphere"
+            float v_sekai:springBone:collider:radius = 0.105
+            vector3f v_sekai:springBone:collider:offset = (0, 1.68, 0)
+        }
+        def Xform "ChestCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        ) {
+            token v_sekai:springBone:collider:shape = "capsule"
+            float v_sekai:springBone:collider:radius = 0.12
+            vector3f v_sekai:springBone:collider:offset = (0, 1.32, 0)
+            vector3f v_sekai:springBone:collider:tail = (0, 1.50, 0)
+        }
+        def Xform "HipCavityCollider" (
+            prepend apiSchemas = ["VSekaiSpringBoneColliderAPI"]
+        ) {
+            token v_sekai:springBone:collider:shape = "sphere"
+            float v_sekai:springBone:collider:radius = 0.16
+            vector3f v_sekai:springBone:collider:offset = (0, 0.95, 0)
+            bool v_sekai:springBone:collider:inside = true
+        }
+    }
+
+    def Scope "Materials"
+    {
+        # MToon-marked materials. Face / Hair / Eyes are the three the
+        # avatar's real .unitypackage assigns MToon to in V-Sekai workflows.
+        def Material "Mire_Mt_Face" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        ) {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.92, 0.78, 0.73)
+            float v_sekai:mtoon:shadingShiftFactor = -0.06
+            float v_sekai:mtoon:shadingToonyFactor = 0.95
+            float v_sekai:mtoon:giEqualizationFactor = 0.9
+            color3f v_sekai:mtoon:parametricRimColorFactor = (0.4, 0.3, 0.45)
+            float v_sekai:mtoon:parametricRimFresnelPowerFactor = 2.0
+            token v_sekai:mtoon:outlineWidthMode = "screenCoordinates"
+            float v_sekai:mtoon:outlineWidthFactor = 0.0015
+            color3f v_sekai:mtoon:outlineColorFactor = (0.08, 0.05, 0.06)
+        }
+        def Material "Mire_Mt_Hair" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        ) {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.5, 0.45, 0.6)
+            float v_sekai:mtoon:shadingToonyFactor = 0.85
+            token v_sekai:mtoon:outlineWidthMode = "worldCoordinates"
+            float v_sekai:mtoon:outlineWidthFactor = 0.0009
+            color3f v_sekai:mtoon:outlineColorFactor = (0.1, 0.08, 0.18)
+        }
+        def Material "Mire_Mt_Eyes" (
+            prepend apiSchemas = ["VSekaiMToonAPI"]
+        ) {
+            color3f v_sekai:mtoon:shadeColorFactor = (0.6, 0.6, 0.85)
+            float v_sekai:mtoon:shadingToonyFactor = 1.0
+            token v_sekai:mtoon:outlineWidthMode = "none"
+            bool v_sekai:mtoon:transparentWithZWrite = true
+            int v_sekai:mtoon:renderQueueOffsetNumber = 1
+        }
+
+        # The remaining 14 materials in Mire's set, left as plain PBR
+        # (no VSekaiMToonAPI applied) so the schema-detection path is
+        # exercised against the realistic ratio of MToon to non-MToon.
+        def Material "Mire_Mt_Arms"          {}
+        def Material "Mire_Mt_Body"          {}
+        def Material "Mire_Mt_Butt"          {}
+        def Material "Mire_Mt_Fleure_Dress"  {}
+        def Material "Mire_Mt_Legs"          {}
+        def Material "Mire_Mt_Sheep"         {}
+        def Material "Mire_Mt_Shirt"         {}
+        def Material "Mire_Mt_Shoes"         {}
+        def Material "Mire_Mt_Spats"         {}
+        def Material "Mire_Mt_Stockings"     {}
+        def Material "Mire_Mt_Sweater"       {}
+        def Material "Mire_Mt_Thighs"        {}
+        def Material "Mire_Mt_Torso"         {}
+        def Material "Dots_Stroke"           {}
+    }
+}

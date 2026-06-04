@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# USD build/cache artifacts
+*.usdc
+# NOTE: schema/generatedSchema.usda IS committed — for codeless
+# schemas, it's the runtime registration source, not a build
+# artifact. (Only ignored if it shows up elsewhere via a code-
+# generated schema build.)
+
+# Build outputs (slangc -> GLSL, CMake, pixi)
+build/
+.pixi/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+pixi-install.log
+lean/.lake/
