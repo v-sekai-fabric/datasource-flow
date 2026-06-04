@@ -80,6 +80,9 @@ def _bind_reader(lib) -> None:
         "idtx_mesh_get_blendshape_name": ([c_void_p, c_int32], c_char_p),
         "idtx_mesh_get_blendshape_weight": ([c_void_p, c_int32], c_float),
         "idtx_mesh_get_blendshape_position_deltas": ([c_void_p, c_int32, f4], None),
+        # geom subsets (UsdGeomSubset): per-material face ranges within one mesh
+        "idtx_mesh_get_subset_count": ([c_void_p], c_int32),
+        "idtx_mesh_get_subset": ([c_void_p, c_int32, i4, i4, i4], None),
         # skeleton
         "idtx_skeleton_get_bone_count": ([c_void_p], c_int32),
         "idtx_skeleton_get_bone_name": ([c_void_p, c_int32], c_char_p),
@@ -114,6 +117,24 @@ class MeshData:
     uvs: np.ndarray | None = None       # (V,2) f32
     tex_path: str | None = None         # base-color texture file path
     blendshapes: list = field(default_factory=list)  # [(name, deltas (V,3))]
+    # UsdGeomSubset material ranges: [(face_start, face_count, color, tex_path)].
+    # Empty/one => single-material mesh (use `color`/`tex_path`).
+    subsets: list = field(default_factory=list)
+
+
+def _material_color_tex(lib, avatar, mat_idx: int):
+    """(base color 0-255 RGB tuple, texture path or None) for an avatar material."""
+    color = (200, 184, 168)
+    tex_path = None
+    if mat_idx is not None and mat_idx >= 0:
+        mat = lib.idtx_avatar_get_material(avatar, mat_idx)
+        if mat:
+            rgba = (c_float * 4)()
+            lib.idtx_material_get_base_color(mat, rgba)
+            color = tuple(int(max(0.0, min(1.0, rgba[k])) * 255) for k in range(3))
+            t = lib.idtx_material_get_base_color_texture(mat)
+            tex_path = t.decode("utf-8") if t else None
+    return color, tex_path
 
 
 # Albedo textures, loaded once per path (RGB PIL images).
@@ -153,10 +174,11 @@ def _read_avatar_textures(lib, avatar) -> dict[str, bytes]:
     return out
 
 
-def _textured_trimesh(md: "MeshData", verts: np.ndarray, image: Image.Image) -> trimesh.Trimesh:
+def _textured_trimesh(md: "MeshData", verts: np.ndarray, faces: np.ndarray,
+                      image: Image.Image) -> trimesh.Trimesh:
     """Build a double-sided, albedo-textured trimesh for GLB rendering. Double
     sided so reversed winding never reads as 'inside out'; normals from the core
-    drive the shading."""
+    drive the shading. `faces` may be a subset of the mesh's triangles."""
     material = trimesh.visual.material.PBRMaterial(
         baseColorTexture=image,
         metallicFactor=0.0,
@@ -164,7 +186,7 @@ def _textured_trimesh(md: "MeshData", verts: np.ndarray, image: Image.Image) -> 
         doubleSided=True,
     )
     visual = trimesh.visual.TextureVisuals(uv=md.uvs, material=material, image=image)
-    kwargs = {"vertices": verts, "faces": md.faces, "visual": visual, "process": False}
+    kwargs = {"vertices": verts, "faces": faces, "visual": visual, "process": False}
     if md.normals is not None:
         kwargs["vertex_normals"] = md.normals
     return trimesh.Trimesh(**kwargs)
@@ -257,18 +279,20 @@ def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
         lib.idtx_mesh_get_uvs(mesh, uv)
         uvs = np.ctypeslib.as_array(uv).reshape(-1, 2).astype(np.float32).copy()
 
-    # Base color + albedo texture from the bound material.
-    color = (200, 184, 168)
-    tex_path = None
-    mat_idx = lib.idtx_avatar_get_mesh_material(avatar, i)
-    if mat_idx >= 0:
-        mat = lib.idtx_avatar_get_material(avatar, mat_idx)
-        if mat:
-            rgba = (c_float * 4)()
-            lib.idtx_material_get_base_color(mat, rgba)
-            color = tuple(int(max(0.0, min(1.0, rgba[k])) * 255) for k in range(3))
-            t = lib.idtx_material_get_base_color_texture(mat)
-            tex_path = t.decode("utf-8") if t else None
+    # Base color + albedo texture from the mesh's primary bound material.
+    color, tex_path = _material_color_tex(lib, avatar, lib.idtx_avatar_get_mesh_material(avatar, i))
+
+    # Geom subsets (UsdGeomSubset): per-material face ranges within this mesh.
+    # Each entry is (face_start, face_count, color, tex_path) -- face indices into
+    # `faces`, so a multi-material mesh renders one piece per material.
+    subsets = []
+    sc = lib.idtx_mesh_get_subset_count(mesh)
+    if sc > 1:
+        for s in range(sc):
+            smat = c_int32(); soff = c_int32(); scnt = c_int32()
+            lib.idtx_mesh_get_subset(mesh, s, smat, soff, scnt)
+            scol, stex = _material_color_tex(lib, avatar, smat.value)
+            subsets.append((soff.value // 3, scnt.value // 3, scol, stex))
 
     # Dense skin weights (V, num_bones) from the 4-per-vertex sparse channels.
     skin = None
@@ -295,7 +319,7 @@ def read_mesh(lib, avatar, i: int, num_bones: int) -> MeshData | None:
         blendshapes.append((bname, deltas))
 
     return MeshData(name, verts, faces, normals, color, skin,
-                    uvs=uvs, tex_path=tex_path, blendshapes=blendshapes)
+                    uvs=uvs, tex_path=tex_path, blendshapes=blendshapes, subsets=subsets)
 
 
 # --------------------------------------------------------------------------
@@ -362,6 +386,21 @@ class Host:
         bones = getattr(self, "_bones", [])
         bone_wxyzs = [b.wxyz for b in bones]
         bone_pos = [b.position for b in bones]
+        def add_piece(path, md, verts, faces, color, tex_path):
+            """Render one mesh piece (whole mesh or one UsdGeomSubset range)."""
+            image = _load_texture(tex_path)
+            if image is not None and md.uvs is not None:
+                # Textured GLB: actual albedo, double-sided (winding-proof).
+                return self.server.scene.add_mesh_trimesh(
+                    path, _textured_trimesh(md, verts, faces, image))
+            if md.skin is not None and bones:
+                return self.server.scene.add_mesh_skinned(
+                    path, vertices=verts, faces=faces,
+                    bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
+                    skin_weights=md.skin, color=color, material="toon3", side="double")
+            return self.server.scene.add_mesh_simple(
+                path, vertices=verts, faces=faces, color=color, side="double")
+
         for md in self._meshes:
             verts = md.verts
             if md.blendshapes:  # apply morph deltas CPU-side
@@ -371,24 +410,16 @@ class Host:
                     if w != 0.0:
                         verts = verts + w * deltas
             path = f"/{self.name}/{md.name}"
-            image = _load_texture(md.tex_path)
-            if image is not None and md.uvs is not None:
-                # Textured render via GLB: shows the avatar's actual albedo and
-                # is double-sided, so reversed winding never reads "inside out".
-                h = self.server.scene.add_mesh_trimesh(path, _textured_trimesh(md, verts, image))
-            elif md.skin is not None and bones:
-                h = self.server.scene.add_mesh_skinned(
-                    path, vertices=verts, faces=md.faces,
-                    bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
-                    skin_weights=md.skin, color=md.color, material="toon3",
-                    side="double",
-                )
+            if len(md.subsets) > 1:
+                # Multi-material mesh (UsdGeomSubset): one piece per material range.
+                for si, (fstart, fcount, scol, stex) in enumerate(md.subsets):
+                    sub_faces = md.faces[fstart:fstart + fcount]
+                    if len(sub_faces) == 0:
+                        continue
+                    self._nodes.append(
+                        add_piece(f"{path}/mat{si}", md, verts, sub_faces, scol, stex))
             else:
-                h = self.server.scene.add_mesh_simple(
-                    path, vertices=verts, faces=md.faces, color=md.color,
-                    side="double",
-                )
-            self._nodes.append(h)
+                self._nodes.append(add_piece(path, md, verts, md.faces, md.color, md.tex_path))
 
     def set_blendshape(self, name: str, weight: float) -> None:
         with self._lock:
