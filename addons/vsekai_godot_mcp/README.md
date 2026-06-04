@@ -10,11 +10,11 @@ way as the Unity host for the two-implementation interop check (Linear CHI-312).
 The Godot editor **is** the MCP server — no external (Python) process required:
 
 ```
-MCP client ──(streamable-HTTP: POST /mcp)──▶ godot_mcp addon ──▶ Godot editor
+MCP client ──(streamable-HTTP: POST /mcp)──▶ vsekai_godot_mcp addon ──▶ Godot editor
                                               EditorPlugin (GDScript)
 ```
 
-The addon (`addon/godot_mcp/`) serves the MCP **streamable-HTTP** transport
+The addon (`addon/vsekai_godot_mcp/`) serves the MCP **streamable-HTTP** transport
 directly in GDScript over `TCPServer`, on `http://127.0.0.1:8788/mcp`:
 
 - `mcp_http_server.gd` — minimal HTTP/1.1 + streamable-HTTP (POST → JSON-RPC,
@@ -56,7 +56,7 @@ eval) is the escape hatch for multi-step logic, equivalent to Unity execute-C#.
 ## Setup (no Python)
 
 1. **Enable the addon** in your Godot project:
-   - copy `addon/godot_mcp/` → `<project>/addons/godot_mcp/`
+   - copy `addon/vsekai_godot_mcp/` → `<project>/addons/vsekai_godot_mcp/`
    - Project → Project Settings → Plugins → enable **Godot MCP Bridge**
    - the Output panel prints `MCP streamable-HTTP on http://127.0.0.1:8788/mcp`.
 2. **Point your MCP client at the addon** — that's it:
@@ -71,9 +71,9 @@ Bind host/port are constants in `mcp_bridge.gd` (`HOST`, `HTTP_PORT` = 8788).
 
 Headless, no editor needed:
 ```
-godot --headless --path addons/godot-mcp --script res://tests/test_commands.gd
-godot --headless --path addons/godot-mcp --script res://tests/test_protocol.gd
-godot --headless --path addons/godot-mcp --script res://tests/test_http.gd
+godot --headless --path . --script res://tests/test_commands.gd
+godot --headless --path . --script res://tests/test_protocol.gd
+godot --headless --path . --script res://tests/test_http.gd
 ```
 
 ## Status / parity

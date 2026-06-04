@@ -1,8 +1,8 @@
 extends SceneTree
 ## Headless tests for MCPProtocol (JSON-RPC / MCP handler).
-## Run: godot --headless --path addons/godot-mcp --script res://tests/test_protocol.gd
+## Run: godot --headless --path . --script res://tests/test_protocol.gd
 
-const Protocol = preload("res://addons/godot_mcp/mcp_protocol.gd")
+const Protocol = preload("res://addons/vsekai_godot_mcp/mcp_protocol.gd")
 
 var _fail := 0
 var _pass := 0
@@ -27,7 +27,7 @@ func _run() -> void:
 
 	# initialize handshake
 	var ini = p.handle_rpc({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} })
-	_check(ini.get("result", {}).get("serverInfo", {}).get("name") == "godot-mcp", "initialize serverInfo")
+	_check(ini.get("result", {}).get("serverInfo", {}).get("name") == "vsekai-godot-mcp", "initialize serverInfo")
 	_check(ini.result.has("protocolVersion"), "initialize protocolVersion")
 	_check(ini.result.get("capabilities", {}).has("tools"), "initialize advertises tools")
 

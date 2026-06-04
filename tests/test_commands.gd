@@ -1,9 +1,9 @@
 extends SceneTree
 ## Headless unit tests for MCPCommands (the transport-free Godot MCP logic).
-## Run: godot --headless --path addons/godot-mcp --script res://tests/test_commands.gd
+## Run: godot --headless --path . --script res://tests/test_commands.gd
 ## Exit code 0 = all pass, 1 = failure(s).
 
-const Commands = preload("res://addons/godot_mcp/mcp_commands.gd")
+const Commands = preload("res://addons/vsekai_godot_mcp/mcp_commands.gd")
 
 var _fail := 0
 var _pass := 0

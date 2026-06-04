@@ -1,8 +1,8 @@
 extends SceneTree
 ## Headless tests for the Unity-MCP-parity command additions.
-## Run: godot --headless --path addons/godot-mcp --script res://tests/test_parity.gd
+## Run: godot --headless --path . --script res://tests/test_parity.gd
 
-const Commands = preload("res://addons/godot_mcp/mcp_commands.gd")
+const Commands = preload("res://addons/vsekai_godot_mcp/mcp_commands.gd")
 
 var _fail := 0
 var _pass := 0
@@ -42,7 +42,7 @@ func _run() -> void:
 	_check(_err(cmds.dispatch("read_file", { "path": "res://does_not_exist.xyz" })), "read_file missing errors")
 
 	# --- dir / find ---
-	_check(cmds.dispatch("list_dir", { "path": "res://addons/godot_mcp" }).files.has("mcp_commands.gd"), "list_dir finds script")
+	_check(cmds.dispatch("list_dir", { "path": "res://addons/vsekai_godot_mcp" }).files.has("mcp_commands.gd"), "list_dir finds script")
 	_check(cmds.dispatch("find_files", { "root": "res://addons", "ext": ".gd" }).files.size() >= 5, "find_files .gd")
 
 	# --- create script / scene ---

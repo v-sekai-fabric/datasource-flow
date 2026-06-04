@@ -8,7 +8,7 @@ class_name MCPProtocol
 ## wraps this in a TCP/HTTP loop. Unit-tested headless (tests/test_protocol.gd).
 
 const PROTOCOL_VERSION := "2025-06-18"
-const SERVER_NAME := "godot-mcp"
+const SERVER_NAME := "vsekai-godot-mcp"
 const SERVER_VERSION := "0.1.0"
 
 # Relative preload (not the class_name global) so this resolves headless and

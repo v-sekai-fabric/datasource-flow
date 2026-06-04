@@ -1,9 +1,9 @@
 extends SceneTree
 ## Headless tests for MCPHttpServer.route() — the transport-free HTTP routing of
 ## the MCP streamable-HTTP server (no sockets involved).
-## Run: godot --headless --path addons/godot-mcp --script res://tests/test_http.gd
+## Run: godot --headless --path . --script res://tests/test_http.gd
 
-const Http = preload("res://addons/godot_mcp/mcp_http_server.gd")
+const Http = preload("res://addons/vsekai_godot_mcp/mcp_http_server.gd")
 
 var _fail := 0
 var _pass := 0
@@ -45,7 +45,7 @@ func _run() -> void:
 	var ini := h.route("POST", "/mcp", {}, _rpc("initialize", {}))
 	_check(ini.code == 200 and ini.ctype == "application/json", "POST initialize -> 200 json")
 	var ini_obj = JSON.parse_string(ini.body)
-	_check(ini_obj.get("result", {}).get("serverInfo", {}).get("name") == "godot-mcp", "initialize body is JSON-RPC result")
+	_check(ini_obj.get("result", {}).get("serverInfo", {}).get("name") == "vsekai-godot-mcp", "initialize body is JSON-RPC result")
 
 	# tools/list
 	var tl := h.route("POST", "/mcp", {}, _rpc("tools/list", {}))

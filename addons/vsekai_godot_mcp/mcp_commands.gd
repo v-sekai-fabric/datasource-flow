@@ -2,7 +2,7 @@
 extends RefCounted
 class_name MCPCommands
 ## Pure command logic for the Godot MCP bridge — transport-free so it can be
-## unit-tested headless (see addons/godot-mcp/tests/). The EditorPlugin
+## unit-tested headless (see addons/vsekai_godot_mcp/tests/). The EditorPlugin
 ## (mcp_bridge.gd) injects `root` (the edited scene root) and `editor` (the
 ## EditorInterface, or null in tests) per request and calls dispatch().
 ##

@@ -1,8 +1,8 @@
 extends SceneTree
 ## Headless tests for MCPCommandBuffer (constant-work ring buffer).
-## Run: godot --headless --path addons/godot-mcp --script res://tests/test_command_buffer.gd
+## Run: godot --headless --path . --script res://tests/test_command_buffer.gd
 
-const Buffer = preload("res://addons/godot_mcp/mcp_command_buffer.gd")
+const Buffer = preload("res://addons/vsekai_godot_mcp/mcp_command_buffer.gd")
 
 var _fail := 0
 var _pass := 0

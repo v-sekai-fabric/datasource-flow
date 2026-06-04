@@ -64,7 +64,8 @@ write per-pair converters.
 
 One MCP per engine so an agent can drive it; prefer HTTP-streaming first-class.
 
-- **Godot:** the addon **is** the server (`addons/godot-mcp/addons/godot_mcp/`,
+- **Godot:** the addon **is** the server (`addons/vsekai_godot_mcp/`, vendored as
+  a git subtree of `v-sekai-multiplayer-fabric/vsekai-godot-mcp`;
   no Python) — Streamable-HTTP on `127.0.0.1:8788` via Godot's `JSONRPC`,
   constant-work command buffer, Origin enforcement opt-in. Loads from `addons/`
   (plural) per `project.godot`; keep tests pointed at the same dir (see §5).
@@ -80,7 +81,7 @@ One MCP per engine so an agent can drive it; prefer HTTP-streaming first-class.
   correct than we are; fix to satisfy it (idempotent xform via `MakeMatrixXform`,
   separate Materials scope to avoid mesh/material name collisions).
 - **Godot MCP:** headless GDScript suites (`godot --headless --script …`); load
-  from `res://addons/godot_mcp/` (the dir the editor loads — NOT a parallel
+  from `res://addons/vsekai_godot_mcp/` (the dir the editor loads — NOT a parallel
   `addon/` copy, which causes a stale split-brain). Clear
   `.godot/global_script_class_cache.cfg` after moving addon files.
 - **ctypes host paths:** pytest against the real DLL (NEW_FLAT → OVERLAY →
