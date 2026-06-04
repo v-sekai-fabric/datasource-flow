@@ -14,14 +14,21 @@
 /core/generated
 /venv
 .sconsign.dblite
-/addon/*/**/bin
-/addon/IDTXFlow/LICENSES-THIRD-PARTY
-/addon/IDTXFlow/THIRDPARTY.txt
+/addons/*/bin
+/addons/IDTXFlow/LICENSES-THIRD-PARTY
+/addons/IDTXFlow/THIRDPARTY.txt
+# pixi solved environments (web/viser-host) — regenerated from pixi.toml/lock
+**/.pixi/
+# node / web build outputs (global — don't rely on per-project .gitignore)
+**/node_modules/
+/web/*/dist/
+# Claude Code runtime state (loop/scheduler locks)
+/.claude/scheduled_tasks.lock
 */**/__pycache__
 /source/gen
 /templates/extension_template/thirdparty
 /templates/extension_template/build
-/templates/extension_template/addon/*/**/bin
+/templates/extension_template/addons/*/bin
 
 # ignore editor configurations
 /.vscode
@@ -79,3 +86,11 @@ idtx-build.log
 # from another working directory.
 *.vrm
 *.glb
+
+# Godot project (repo root IS the Godot project: project.godot + addons/).
+# The editor's import cache regenerates; the Miroir scenes are transient
+# cross-engine transfer demo output (the USD/JSON the spokes exchange).
+/.godot/
+/Miroir_Re_fromUnity_USD.tscn
+/Miroir_Re_Clothing_fromUnity.tscn
+/miroir_geo.json

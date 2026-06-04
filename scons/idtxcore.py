@@ -108,6 +108,13 @@ def _common_env(env, *, building_dll, static):
 
     cfg_env.Append(CPPPATH=[
         "core/include",
+        # idtx_scene converter: the engine-agnostic converter framework lives in
+        # shared/include (angle includes <idtxflow/...>), the FlatTree target in
+        # core/src ("scene/..."), and "core" lets StageConverter's relative
+        # `../usd/include/idtx/*` schema include resolve (core/../usd/include).
+        "core/src",
+        "core",
+        "shared/include",
         f"{usd_root}/include",
         f"{usd_extension_path}/include",
         "libs/cgltf",
@@ -219,6 +226,8 @@ def _sources():
         "core/src/idtx_export_scn.cpp",
         "core/src/idtx_transport.cpp",
         "core/src/idtx_aes.cpp",
+        # idtx_scene: USD stage -> engine-neutral node tree (FlatTree converter).
+        "core/src/idtx_scene.cpp",
     ]
 
 

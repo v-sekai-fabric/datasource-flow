@@ -181,3 +181,72 @@ idtx_avatar_t* idtx_core_import_avatar_from_vrm(const char* path);
 void idtx_scn_opts_init(idtx_scn_opts_t* opts);
 int32_t idtx_core_export_avatar_to_scn(const idtx_avatar_t* avatar, const char* path, const idtx_scn_opts_t* opts);
 int64_t idtx_core_export_avatar_to_scn_buffer(const idtx_avatar_t* avatar, uint8_t* out_buf, size_t out_cap, const idtx_scn_opts_t* opts);
+
+# --- idtx_buffer / idtx_chunker: casync CDC + .caibx (idtx_chunker.h) --
+const uint8_t* idtx_buffer_data(const idtx_buffer_t* buf);
+size_t idtx_buffer_size(const idtx_buffer_t* buf);
+void idtx_buffer_destroy(idtx_buffer_t* buf);
+void idtx_chunker_sha512_256(const uint8_t* data, size_t len, uint8_t out_id[IDTX_CHUNKER_CHUNK_ID_BYTES]);
+void idtx_chunker_build_chunk_url(const char* store_url, const uint8_t id[IDTX_CHUNKER_CHUNK_ID_BYTES], char* out, size_t cap);
+int32_t idtx_chunker_cdc(const uint8_t* data, size_t len, size_t min_size, size_t avg_size, size_t max_size, idtx_chunklist_t** out_chunks);
+int32_t idtx_chunklist_count(const idtx_chunklist_t* cl);
+int32_t idtx_chunklist_get(const idtx_chunklist_t* cl, int32_t index, uint64_t* out_offset, uint64_t* out_size, uint8_t out_id[IDTX_CHUNKER_CHUNK_ID_BYTES]);
+void idtx_chunklist_destroy(idtx_chunklist_t* cl);
+int32_t idtx_chunker_parse_caibx(const uint8_t* data, size_t len, idtx_caibx_t** out_index);
+int32_t idtx_caibx_chunk_count(const idtx_caibx_t* idx);
+int32_t idtx_caibx_get_chunk(const idtx_caibx_t* idx, int32_t index, uint64_t* out_offset, uint64_t* out_size, uint8_t out_id[IDTX_CHUNKER_CHUNK_ID_BYTES]);
+void idtx_caibx_destroy(idtx_caibx_t* idx);
+int32_t idtx_chunker_emit_caibx(const idtx_chunklist_t* cl, size_t chunk_size_min, size_t chunk_size_avg, size_t chunk_size_max, idtx_buffer_t** out_caibx);
+int32_t idtx_chunker_decompress_and_verify(const uint8_t* cacnk_zstd, size_t cacnk_len, const uint8_t expected_id[IDTX_CHUNKER_CHUNK_ID_BYTES], idtx_buffer_t** out_plain);
+int32_t idtx_chunker_compress(const uint8_t* plain, size_t plain_len, idtx_buffer_t** out_cacnk);
+
+# --- idtx_transport: aria-storage CDN transport (idtx_transport.h) -----
+idtx_transport_t* idtx_transport_new(const char* aria_base_url);
+void idtx_transport_destroy(idtx_transport_t* t);
+void idtx_transport_set_auth(idtx_transport_t* t, const char* bearer_token);
+void idtx_transport_set_cache_dir(idtx_transport_t* t, const char* cache_dir);
+int32_t idtx_transport_set_insecure_tls(idtx_transport_t* t, int32_t insecure);
+int32_t idtx_transport_put_chunk(idtx_transport_t* t, const uint8_t id[IDTX_CHUNKER_CHUNK_ID_BYTES], const uint8_t* zstd_blob, size_t len);
+int32_t idtx_transport_head_chunk(idtx_transport_t* t, const uint8_t id[IDTX_CHUNKER_CHUNK_ID_BYTES]);
+int32_t idtx_transport_get_chunk(idtx_transport_t* t, const uint8_t id[IDTX_CHUNKER_CHUNK_ID_BYTES], idtx_buffer_t** out_zstd);
+int32_t idtx_transport_put_caibx(idtx_transport_t* t, const char* name, const uint8_t* caibx_bytes, size_t len, char* out_url, size_t cap);
+int32_t idtx_transport_get_caibx(idtx_transport_t* t, const char* url, idtx_buffer_t** out_caibx);
+int32_t idtx_chunker_upload_asset(idtx_transport_t* t, const char* index_name, const uint8_t* blob, size_t len, char* out_caibx_url, size_t cap);
+int32_t idtx_chunker_assemble(idtx_transport_t* t, const idtx_caibx_t* idx, idtx_buffer_t** out_blob);
+int32_t idtx_transport_last_status(const idtx_transport_t* t);
+const char* idtx_transport_last_error(const idtx_transport_t* t);
+
+# --- idtx_aes: AES-128-GCM + script-key parse (idtx_aes.h) -------------
+int32_t idtx_aes_gcm_encrypt(const uint8_t key[IDTX_AES_KEY_BYTES], const uint8_t iv[IDTX_AES_IV_BYTES], const uint8_t* plaintext, size_t pt_len, idtx_buffer_t** out_ciphertext_with_tag);
+int32_t idtx_aes_gcm_decrypt(const uint8_t key[IDTX_AES_KEY_BYTES], const uint8_t iv[IDTX_AES_IV_BYTES], const uint8_t* ciphertext_with_tag, size_t ct_len, idtx_buffer_t** out_plaintext);
+int32_t idtx_aes_parse_script_key_json(const char* json, size_t json_len, uint8_t out_key[IDTX_AES_KEY_BYTES], uint8_t out_iv[IDTX_AES_IV_BYTES], uint64_t* out_ttl_seconds);
+
+# --- idtx_scene: USD stage -> engine-neutral node tree (idtx_scene.h) -------
+idtx_scene_t* idtx_core_import_scene_from_usd(const char* uri);
+void idtx_core_scene_destroy(idtx_scene_t* scene);
+idtx_axis_t idtx_scene_get_up_axis(const idtx_scene_t* scene);
+double idtx_scene_get_meters_per_unit(const idtx_scene_t* scene);
+int32_t idtx_scene_get_node_count(const idtx_scene_t* scene);
+idtx_node_t* idtx_scene_get_node(const idtx_scene_t* scene, int32_t index);
+int32_t idtx_node_get_parent(const idtx_node_t* node);
+idtx_node_kind_t idtx_node_get_kind(const idtx_node_t* node);
+const char* idtx_node_get_name(const idtx_node_t* node);
+const char* idtx_node_get_path(const idtx_node_t* node);
+void idtx_node_get_local_transform(const idtx_node_t* node, float out_matrix[16]);
+int32_t idtx_node_get_material_index(const idtx_node_t* node);
+int32_t idtx_node_get_display_color_count(const idtx_node_t* node);
+void idtx_node_get_display_colors(const idtx_node_t* node, float* out_rgba);
+idtx_color_interp_t idtx_node_get_color_interpolation(const idtx_node_t* node);
+int32_t idtx_scene_get_material_count(const idtx_scene_t* scene);
+idtx_material_t* idtx_scene_get_material(const idtx_scene_t* scene, int32_t index);
+double idtx_node_get_cube_size(const idtx_node_t* node);
+void idtx_node_get_cone(const idtx_node_t* node, double* out_radius, double* out_height, idtx_axis_t* out_axis);
+void idtx_node_get_cylinder(const idtx_node_t* node, double* out_radius, double* out_height, idtx_axis_t* out_axis);
+double idtx_node_get_sphere_radius(const idtx_node_t* node);
+idtx_mesh_t* idtx_node_get_mesh(const idtx_node_t* node);
+idtx_skeleton_t* idtx_node_get_skeleton(const idtx_node_t* node);
+idtx_mesh_t* idtx_node_get_skinned_mesh(const idtx_node_t* node);
+void idtx_node_get_collision(const idtx_node_t* node, idtx_collision_shape_t* out_shape, idtx_axis_t* out_axis, double* out_height, double* out_radius);
+int32_t idtx_node_get_collision_type_count(const idtx_node_t* node);
+const char* idtx_node_get_collision_type(const idtx_node_t* node, int32_t index);
+void idtx_node_get_collision_root(const idtx_node_t* node, float out_highlight_color3[3], const char** out_identifier, int32_t* out_enabled, int32_t* out_highlightable);

@@ -25,6 +25,11 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+// The C ABI transport handle. Must be included BEFORE `namespace godot` so the
+// member below binds to the global `::idtx_transport_t`; otherwise the
+// elaborated `struct idtx_transport` would declare a distinct godot::idtx_transport.
+#include "idtx_core/idtx_transport.h"
+
 namespace godot {
 
 class IDTXFlowChunker : public RefCounted {
@@ -65,7 +70,7 @@ protected:
 	static void _bind_methods();
 
 private:
-	struct idtx_transport *transport = nullptr;
+	::idtx_transport_t *transport = nullptr;
 };
 
 } // namespace godot

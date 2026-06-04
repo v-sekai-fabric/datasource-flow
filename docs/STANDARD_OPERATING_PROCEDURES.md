@@ -64,7 +64,7 @@ write per-pair converters.
 
 One MCP per engine so an agent can drive it; prefer HTTP-streaming first-class.
 
-- **Godot:** the addon **is** the server (`tools/godot-mcp/addons/godot_mcp/`,
+- **Godot:** the addon **is** the server (`addons/godot-mcp/addons/godot_mcp/`,
   no Python) — Streamable-HTTP on `127.0.0.1:8788` via Godot's `JSONRPC`,
   constant-work command buffer, Origin enforcement opt-in. Loads from `addons/`
   (plural) per `project.godot`; keep tests pointed at the same dir (see §5).

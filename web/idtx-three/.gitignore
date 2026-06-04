@@ -1,5 +1,0 @@
-node_modules/
-dist/
-# built wasm artifacts (produced by npm run build:wasm)
-public/idtx_core.js
-public/idtx_core.wasm

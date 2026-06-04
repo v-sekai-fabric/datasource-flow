@@ -1,0 +1,3 @@
+# pixi solved environment — regenerated from pixi.toml / pixi.lock
+.pixi/
+__pycache__/

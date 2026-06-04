@@ -1,0 +1,22 @@
+[workspace]
+name = "idtx-viser-host"
+version = "0.1.0"
+description = "idtx-flow web host: viser (Python server) rendering libidtx_core geometry server-side, no WASM"
+authors = ["The openusd-fabric authors"]
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+
+# The core (libidtx_core) is loaded via ctypes from build/idtx_core; it resolves
+# its own OpenUSD deps from thirdparty/openusd-25.11 (see the Blender binding's
+# _add_dependency_dirs), so the env itself only needs numpy + viser.
+[dependencies]
+python = "3.11.*"
+numpy = ">=1.26"
+
+[pypi-dependencies]
+viser = "*"
+
+[tasks]
+# Proof-of-concept: read the Miroir USD through libidtx_core and render it in
+# the browser via viser. Open the printed URL.
+serve = "python serve.py"

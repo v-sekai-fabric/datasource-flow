@@ -31,6 +31,7 @@ Usage in SConstruct (any time after the env is configured; the generated
 table is a build artifact under core/generated/, git-ignored):
     env.GenerateCoreStubs()
 """
+import glob
 import os
 import re
 import subprocess
@@ -47,14 +48,21 @@ def exists(env):
 
 # --- ABI drift gate ----------------------------------------------------
 
-def _header_exports(header_path):
-    """Function names carrying IDTX_CORE_API in the public header."""
-    text = open(header_path).read()
+def _header_exports(header_paths):
+    """Function names carrying IDTX_CORE_API across the public headers.
+
+    The ABI is split across idtx_core.h plus sibling headers (idtx_chunker.h,
+    idtx_transport.h, idtx_aes.h), so the drift gate must union all of them —
+    otherwise a symbol declared in a sibling header but listed in the .sigs is
+    flagged as 'extra' (which is exactly how the chunker/transport ABI slipped
+    out of the dlopen table)."""
     names = set()
-    for m in re.finditer(r'IDTX_CORE_API\b(.*?)\(', text, re.S):
-        idents = re.findall(r'[A-Za-z_]\w*', m.group(1))
-        if idents:
-            names.add(idents[-1])
+    for header_path in header_paths:
+        text = open(header_path).read()
+        for m in re.finditer(r'IDTX_CORE_API\b(.*?)\(', text, re.S):
+            idents = re.findall(r'[A-Za-z_]\w*', m.group(1))
+            if idents:
+                names.add(idents[-1])
     # The macro-definition block itself matches (it mentions
     # __declspec / __attribute__); drop non-idtx tokens.
     return {n for n in names if n.startswith('idtx_')}
@@ -73,13 +81,13 @@ def _sigs_exports(sigs_path):
     return names
 
 
-def _check_drift(header_path, sigs_path):
-    hdr = _header_exports(header_path)
+def _check_drift(header_paths, sigs_path):
+    hdr = _header_exports(header_paths)
     sig = _sigs_exports(sigs_path)
     missing = sorted(hdr - sig)   # exported but not in .sigs
     extra = sorted(sig - hdr)     # in .sigs but no longer exported
     if missing or extra:
-        msg = ["idtx_core.sigs is out of sync with idtx_core.h:"]
+        msg = ["idtx_core.sigs is out of sync with the public idtx_core headers:"]
         if missing:
             msg.append("  exported in header but MISSING from .sigs: " + ", ".join(missing))
         if extra:
@@ -94,7 +102,10 @@ def _generate_core_stubs(env):
     print("Generating libidtx_core dlopen stubs from core/idtx_core.sigs...")
 
     sigs = "core/idtx_core.sigs"
-    header = "core/include/idtx_core/idtx_core.h"
+    # The .sigs is the single source of truth for the dlopen surface; gate it
+    # against every public header (idtx_core.h + the CDN/crypto siblings), not
+    # just idtx_core.h. internal/ is intentionally excluded (non-public).
+    headers = sorted(glob.glob("core/include/idtx_core/*.h"))
     gen_dir = "core/generated"
     generator = "thirdparty/generate_stubs/generate_stubs.py"
 
@@ -103,7 +114,7 @@ def _generate_core_stubs(env):
         env['idtx_core_stubs_available'] = False
         return None
 
-    _check_drift(header, sigs)
+    _check_drift(headers, sigs)
     print("  [stubs] .sigs <-> header ABI in sync")
 
     if not os.path.isdir(gen_dir):

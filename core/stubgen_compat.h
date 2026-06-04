@@ -20,6 +20,14 @@
 #pragma once
 
 #include "idtx_core/idtx_core.h"
+// The CDN/crypto ABI lives in sibling headers; the dispatch table is typed in
+// terms of their handles (idtx_buffer_t, idtx_caibx_t, idtx_transport_t) and
+// size macros (IDTX_CHUNKER_CHUNK_ID_BYTES, IDTX_AES_KEY_BYTES, ...), so they
+// must be in scope for the generated POSIX thunks too.
+#include "idtx_core/idtx_chunker.h"
+#include "idtx_core/idtx_transport.h"
+#include "idtx_core/idtx_aes.h"
+#include "idtx_core/idtx_scene.h"
 
 #ifndef DISABLE_CFI_ICALL
 #define DISABLE_CFI_ICALL

@@ -181,6 +181,11 @@ def _build_extension(env):
         extension_env.Append(LIBS=libs + [core_lib_basename + "_delayload", "delayimp",
                                           "advapi32", "shell32", "ole32", "ws2_32", "crypt32", "user32"])
         extension_env.Append(LINKFLAGS=[f"/DELAYLOAD:{core_lib_basename}.dll"])
+        # The core delay-load has no statically-detectable imports (the loader
+        # binds it via GetProcAddress), so the linker warns LNK4199 ("/DELAYLOAD
+        # ... ignored; no imports found"). That is intended; suppress it so an
+        # inherited /WX can't escalate this benign warning into LNK1218.
+        extension_env.Append(LINKFLAGS=["/IGNORE:4199"])
         extension_env.Append(CPPDEFINES=["NOMINMAX", "WIN32_LEAN_AND_MEAN", "_ITERATOR_DEBUG_LEVEL=0"])
         if build_target in ["editor", "template_debug"]:
             # DEBUG
