@@ -39,18 +39,52 @@ Transform3D to_transform(const float m[16]) {
     return Transform3D(basis, Vector3(m[12], m[13], m[14]));
 }
 
-// Default material from the node's display color (constant interp -> albedo,
-// else vertex-color), mirroring the old ConvertXxx default-material path.
-Ref<StandardMaterial3D> default_material(idtx_node_t* node) {
+// Build the Godot material for a node — the single material path for the whole
+// builder. Prefers the node's bound idtx_material (UsdPreviewSurface base color /
+// metallic / roughness, converted in-core); when the node has none (primitives,
+// or a mesh with no bound material), falls back to its display color (constant
+// interp -> albedo, else vertex-color). Texture maps from the material's image
+// paths are a follow-up (needs usdz asset extraction).
+Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
     Ref<StandardMaterial3D> mat;
     mat.instantiate();
+
+    const int32_t mi = idtx_node_get_material_index(node);
+    const idtx_material_t* m = (mi >= 0) ? idtx_scene_get_material(scene, mi) : nullptr;
+    if (m) {
+        float rgba[4];
+        idtx_material_get_base_color(m, rgba);
+        const Color albedo(rgba[0], rgba[1], rgba[2], rgba[3]);
+        mat->set_albedo(albedo);
+        mat->set_metallic(idtx_material_get_metallic(m));
+        mat->set_roughness(idtx_material_get_roughness(m));
+        switch (idtx_material_get_alpha_mode(m)) {
+            case IDTX_ALPHA_MASK: {
+                mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA_SCISSOR);
+                mat->set_alpha_scissor_threshold(idtx_material_get_alpha_cutoff(m));
+            } break;
+            case IDTX_ALPHA_BLEND: {
+                mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
+            } break;
+            default: {
+                if (albedo.a < 1.0f) {
+                    mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
+                }
+            } break;
+        }
+        return mat;
+    }
+
+    // No bound material: fall back to the node's display color.
     const int32_t cc = idtx_node_get_display_color_count(node);
     if (cc > 0 && idtx_node_get_color_interpolation(node) == IDTX_COLOR_INTERP_CONSTANT) {
         std::vector<float> rgba(cc * 4);
         idtx_node_get_display_colors(node, rgba.data());
-        Color albedo(rgba[0], rgba[1], rgba[2], rgba[3]);
+        const Color albedo(rgba[0], rgba[1], rgba[2], rgba[3]);
         mat->set_albedo(albedo);
-        if (albedo.a < 1.0f) mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
+        if (albedo.a < 1.0f) {
+            mat->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
+        }
     } else {
         mat->set_flag(BaseMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
     }
@@ -125,32 +159,32 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
         case IDTX_NODE_CUBE: {
             Ref<BoxMesh> box; box.instantiate();
             double s = idtx_node_get_cube_size(node); box->set_size(Vector3(s, s, s));
-            box->set_material(default_material(node));
+            box->set_material(build_material(scene, node));
             auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(box); n->set_transform(xform); return n;
         }
         case IDTX_NODE_CYLINDER: {
             Ref<CylinderMesh> cyl; cyl.instantiate();
             double r, h; idtx_axis_t a; idtx_node_get_cylinder(node, &r, &h, &a);
             cyl->set_top_radius(r); cyl->set_bottom_radius(r); cyl->set_height(h);
-            cyl->set_material(default_material(node));
+            cyl->set_material(build_material(scene, node));
             auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(cyl); n->set_transform(xform); return n;
         }
         case IDTX_NODE_CONE: {
             Ref<CylinderMesh> cyl; cyl.instantiate();
             double r, h; idtx_axis_t a; idtx_node_get_cone(node, &r, &h, &a);
             cyl->set_top_radius(0.0); cyl->set_bottom_radius(r); cyl->set_height(h);
-            cyl->set_material(default_material(node));
+            cyl->set_material(build_material(scene, node));
             auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(cyl); n->set_transform(xform); return n;
         }
         case IDTX_NODE_SPHERE: {
             Ref<SphereMesh> sph; sph.instantiate();
             double r = idtx_node_get_sphere_radius(node); sph->set_radius(r); sph->set_height(r * 2.0);
-            sph->set_material(default_material(node));
+            sph->set_material(build_material(scene, node));
             auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(sph); n->set_transform(xform); return n;
         }
         case IDTX_NODE_MESH: {
             Ref<ArrayMesh> mesh = build_array_mesh(idtx_node_get_mesh(node));
-            if (mesh->get_surface_count() > 0) mesh->surface_set_material(0, default_material(node));
+            if (mesh->get_surface_count() > 0) mesh->surface_set_material(0, build_material(scene, node));
             auto* n = memnew(UsdMeshInstanceNode3D); n->set_mesh(mesh); n->set_transform(xform); return n;
         }
         case IDTX_NODE_SKELETON: {
@@ -175,7 +209,7 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
             if (idtx_mesh_t* sm = idtx_node_get_skinned_mesh(node)) {
                 Ref<ArrayMesh> mesh = build_array_mesh(sm);
                 if (mesh->get_surface_count() > 0) {
-                    mesh->surface_set_material(0, default_material(node));
+                    mesh->surface_set_material(0, build_material(scene, node));
                     auto* mi = memnew(UsdMeshInstanceNode3D);
                     mi->set_mesh(mesh);
                     mi->set_skeleton(sk);

@@ -7,6 +7,7 @@
 
 #include "idtx_core/idtx_core.h"
 #include "idtx_core/internal/usd_helpers.h"
+#include "usd_internal.h"
 
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/vec2f.h>
@@ -362,7 +363,7 @@ static pxr::UsdShadeShader find_preview_surface(pxr::UsdShadeMaterial const& mat
 // Read a UsdShadeMaterial -> idtx_material_t. Always succeeds (returns
 // at minimum a defaulted handle) so the path-to-index map stays in
 // sync with the avatar's material list.
-static idtx_material_t* read_material(pxr::UsdPrim const& prim)
+idtx_material_t* read_material(pxr::UsdPrim const& prim)
 {
     pxr::UsdShadeMaterial mat(prim);
     idtx_material_t* out = idtx_material_create();

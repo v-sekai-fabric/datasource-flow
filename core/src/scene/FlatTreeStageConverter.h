@@ -24,6 +24,7 @@
 
 #include "scene/FlatTreeTarget.h"
 #include "scene/FlatTreeTypeConverter.h"
+#include "usd_internal.h"  // idtx::core::detail::read_material
 
 namespace idtxflow::converter {
 
@@ -63,6 +64,21 @@ inline void set_display(N* n, const pxr::VtArray<pxr::GfVec4f>& colors, const px
     n->color_interp = interp_of(interp);
     n->display_rgba.reserve(colors.size() * 4);
     for (const auto& c : colors) { n->display_rgba.insert(n->display_rgba.end(), {c[0], c[1], c[2], c[3]}); }
+}
+
+// Convert the first bound material among `mds` into the scene material table,
+// returning its index (-1 if none). idtx_mesh is single-surface, so a multi-
+// subset mesh keeps only its first material — full per-subset materials need a
+// multi-surface mesh model (later).
+template <typename MD>
+inline int32_t first_material(idtx::core::scene::FlatScene* scene, const std::vector<MD>& mds) {
+    for (const auto& md : mds) {
+        if (md.usdMaterial) {
+            scene->materials.push_back(idtx::core::detail::read_material(md.usdMaterial.GetPrim()));
+            return static_cast<int32_t>(scene->materials.size()) - 1;
+        }
+    }
+    return -1;
 }
 
 // Append src mesh into dst, offsetting indices — collapses USD material subsets
@@ -161,6 +177,7 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertMesh(
     n->kind = IDTX_NODE_MESH; n->local_transform = transform;
     flat_detail::set_display(n, colors, interp);
     for (const auto& md : mesh_descriptions) flat_detail::merge_mesh(n->mesh_data, md.meshData);
+    n->material_index = flat_detail::first_material(OwningEntity, mesh_descriptions);
     return n;  // mesh_data -> idtx_mesh at finalize (idtx_scene.cpp)
 }
 
@@ -176,6 +193,10 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
     // collapse all skin targets' subsets into one skinned mesh (staged in mesh_data)
     for (const auto& target : skel.SkinTargets)
         for (const auto& md : target.MeshDescriptions) flat_detail::merge_mesh(n->mesh_data, md.meshData);
+    for (const auto& target : skel.SkinTargets) {
+        const int32_t mi = flat_detail::first_material(OwningEntity, target.MeshDescriptions);
+        if (mi >= 0) { n->material_index = mi; break; }
+    }
     return n;  // mesh_data -> skinned_mesh at finalize
 }
 
