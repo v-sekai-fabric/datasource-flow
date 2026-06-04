@@ -55,6 +55,15 @@ else:
 
 env['openusd_version'] = openusd_version
 
+# Optionally emit compile_commands.json for clangd / IDE include resolution.
+# Enabled with `scons compiledb=yes`. The compilation_db tool hooks the object
+# builders' emitters, so it MUST be added here on the base env — BEFORE the
+# per-target env.Clone() calls in BuildGodotCPP / BuildIdtxCore / BuildGdExtension
+# — so every clone inherits the emitter and feeds the one shared database.
+emit_compiledb = ARGUMENTS.get('compiledb', 'no') not in ('0', 'no', 'false', '')
+if emit_compiledb:
+    env.Tool('compilation_db')
+
 # download and build IXWebSocket from source as a static library
 env.BuildIXWebSocket()
 # download and build openUSD from source without python support, as we don't need it and it will speed up the build process significantly
@@ -93,3 +102,12 @@ env.BuildGdExtension()
 # with the GDExtension built, we can grab everything that is required to form an IDTXFlowGodotExtension SDK to implement
 # an extension of this very GDExtension
 env.ComposeIdtxFlowGodotSDK()
+
+# Write the captured compile commands to compile_commands.json at the repo root
+# and fold it into the default targets, so `scons compiledb=yes` refreshes it as
+# part of the normal build. `env` here is the post-godot-cpp clone, which carries
+# the CompilationDatabase builder inherited from the base env above.
+if emit_compiledb:
+    compdb = env.CompilationDatabase('compile_commands.json')
+    env.Alias('compiledb', compdb)
+    env.Default(compdb)
