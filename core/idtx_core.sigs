@@ -1,6 +1,6 @@
 # libidtx_core C ABI — function declarations consumed by every host that
-# dlopens the core (Godot GDExtension, Unity P/Invoke, Unreal plugin,
-# Blender hook, and the standalone idtxcli). Fed to
+# dlopens the core (Godot GDExtension, Unity P/Invoke, Blender hook, the
+# viser web host, and the standalone idtxcli). Fed to
 # thirdparty/generate_stubs/generate_stubs.py, which emits a dlsym-backed
 # dispatch table (POSIX stubs) / delay-load .def (Windows) — no
 # -lidtx_core at link time, and therefore no transitive OpenUSD on any
@@ -250,3 +250,6 @@ void idtx_node_get_collision(const idtx_node_t* node, idtx_collision_shape_t* ou
 int32_t idtx_node_get_collision_type_count(const idtx_node_t* node);
 const char* idtx_node_get_collision_type(const idtx_node_t* node, int32_t index);
 void idtx_node_get_collision_root(const idtx_node_t* node, float out_highlight_color3[3], const char** out_identifier, int32_t* out_enabled, int32_t* out_highlightable);
+
+# --- idtx_asset_io: host URI-scheme resolution (idtx_asset_io.h) ----------
+void idtx_core_set_asset_io(const idtx_asset_io_t* io);

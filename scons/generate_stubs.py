@@ -6,7 +6,7 @@ libidtx_core C ABI, using the vendored Chromium generator at
 thirdparty/generate_stubs/generate_stubs.py.
 
 Why: every host that consumes libidtx_core (Godot GDExtension, Unity
-P/Invoke, Unreal plugin, Blender hook, and the standalone idtxcli) can
+P/Invoke, Blender hook, the viser web host, and the standalone idtxcli) can
 load the shared library at RUNTIME through this table instead of linking
 it. No -lidtx_core at link time means none of those hosts drag in the
 statically-linked OpenUSD that lives inside core — the C ABI is the only

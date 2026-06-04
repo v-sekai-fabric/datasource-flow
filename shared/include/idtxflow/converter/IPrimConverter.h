@@ -7,7 +7,7 @@
  * Inspired by OpenUSD's plugInfo.json / TfType registry pattern, this interface allows third-party
  * developers to register converters for custom USD prim types without modifying the core IDTXFlow
  * library. Implementations are parameterized by TargetEngine, allowing the same plugin architecture
- * to work across Godot, Unreal, Unity, or any other engine that specializes TargetEngineTypes.
+ * to work across Godot, Unity, or any other engine that specializes TargetEngineTypes.
  *
  * Usage:
  *   1. Subclass IPrimConverter<YourTargetEngine>

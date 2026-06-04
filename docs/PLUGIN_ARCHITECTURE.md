@@ -73,7 +73,7 @@ IDTXFlow exposes a **two-layer header architecture** for extension authors, that
 ### Why Two Layers?
 
 - **Layer 1** (`shared/include/idtxflow/`) contains engine-agnostic C++ templates and interfaces that could be reused
-for any target engine (Godot, Unreal, Unity, etc.). These are header-only.
+for any target engine (Godot, Unity, etc.). These are header-only.
 
 - **Layer 2** (`source/include/idtxflow_godot/`) contains Godot-specific headers that solve the **DLL singleton problem**
 — ensuring that the `PrimConverterRegistry<TargetEngineGodot>` singleton exists exactly once (in the IDTXFlow DLL) and is

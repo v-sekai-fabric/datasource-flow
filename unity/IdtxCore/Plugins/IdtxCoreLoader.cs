@@ -3,8 +3,8 @@
 //
 // CHI-312: runtime loader that maps the logical [DllImport] name "idtx_core"
 // to the real per-platform file libidtx_core.<plat>.<arch>.<ext> — the same
-// basename every other host (Godot GDExtension, Unreal plugin, Blender hook,
-// idtxcli) dlopen's. Without this, [DllImport("idtx_core")] would look for
+// basename every other host (Godot GDExtension, Blender hook, the viser web
+// host, idtxcli) dlopen's. Without this, [DllImport("idtx_core")] would look for
 // "idtx_core.dll", which never matches the shipped "libidtx_core.windows.
 // x86_64.dll".
 //

@@ -33,7 +33,7 @@ constexpr std::string_view to_string(LogLevel level) noexcept {
 /**
  * @brief Abstract logger interface for engine adapters
  * 
- * Engine adapters (Godot, Unreal, Unity, etc.) provide a concrete implementation
+ * Engine adapters (Godot, Unity, etc.) provide a concrete implementation
  * that routes log output to the engine's console/logging system.
  * 
  * The adapter receives a fully formatted log line and only needs to dispatch

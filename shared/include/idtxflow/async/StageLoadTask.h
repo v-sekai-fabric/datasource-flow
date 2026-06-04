@@ -16,7 +16,7 @@
  *   or `std::stop_token` to maximize platform compatibility (consoles, mobile, desktop).
  * - **Callback on worker thread**: The callback fires on the worker thread. The engine
  *   integration layer is responsible for marshalling to the main/render thread
- *   (e.g., Godot `call_deferred`, Unreal `AsyncTask(GameThread, ...)`).
+ *   (e.g., Godot `call_deferred`).
  * - **Best-effort cancellation**: Since OpenUSD does not support cancelling a stage open,
  *   `Cancel()` sets a flag that suppresses the callback invocation.
  *

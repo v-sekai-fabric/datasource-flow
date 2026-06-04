@@ -375,7 +375,11 @@ def _copy_usd_plugins(target, source, env):
     print("Copy USD Plugin Config..")
     shutil.copytree(f"./thirdparty/openusd-{env.get('openusd_version', '')}/lib/usd", f"addons/IDTXFlow/bin/{env['platform_name']}/usd", dirs_exist_ok=True)
     shutil.copytree(f"./thirdparty/openusd-{env.get('openusd_version', '')}/plugin/usd", "addons/IDTXFlow/bin/plugin/usd", dirs_exist_ok=True)
-    shutil.copytree("usd/plugin/godot", "addons/IDTXFlow/bin/plugin/usd/godot", dirs_exist_ok=True)
+    # res://, user:// resolver now lives in libidtx_core (IdtxHostUriResolver,
+    # driven by the host asset-IO callback) — NOT the old extension-side
+    # UsdGodotAssetResolver/UsdHttpAssetResolver, which were deleted. Ship its
+    # plugInfo so the core's USD dispatches those schemes to it.
+    shutil.copytree("usd/plugin/idtx_resolver", "addons/IDTXFlow/bin/plugin/usd/idtx_resolver", dirs_exist_ok=True)
     shutil.copytree("usd/plugin/idtx", "addons/IDTXFlow/bin/plugin/usd/idtx", dirs_exist_ok=True)
 
 def _copy_third_party_licenses(target, source, env):

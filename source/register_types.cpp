@@ -17,11 +17,27 @@
 #include "exporter/IDTXFlowExporter.h"
 
 #include "idtx_core_loader.h"
+#include "idtx_core/idtx_asset_io.h"
+
+#include <cstring>
 
 using namespace godot;
 
 // Static logger instance — lives for the lifetime of this dll
 static idtxflow::utils::IDTXFlowGodotLogger g_logger;
+
+// Host asset-IO: map res://, user:// to a filesystem path via Godot's
+// ProjectSettings, so libidtx_core's in-core ArResolver can resolve those
+// schemes when they appear INSIDE a USD stage (the core has no engine knowledge).
+static int32_t idtxflow_globalize_path(void* /*user*/, const char* uri, char* out_path, int32_t cap) {
+    ProjectSettings* ps = ProjectSettings::get_singleton();
+    if (!ps || !out_path || cap <= 0) return 0;
+    const CharString abs = ps->globalize_path(String(uri)).utf8();
+    const int32_t n = static_cast<int32_t>(abs.length());
+    if (n + 1 > cap) { out_path[0] = 0; return 0; }
+    std::memcpy(out_path, abs.get_data(), n + 1);
+    return 1;
+}
 
 #ifdef IDTXFLOW_MDL_ENABLED
 #include <idtxflow/converter/MdlMaterialConverter.h>
@@ -65,6 +81,13 @@ void initialize_idtxflow_module(ModuleInitializationLevel p_level) {
     // Windows, dlsym stubs on POSIX) before any idtx_core_* call. The extension
     // no longer link-depends on core or its static OpenUSD.
     idtxflow::load_idtx_core();
+
+    // Register Godot-backed asset I/O so the core's res://, user:// ArResolver
+    // works for references inside a stage (top-level URIs are globalized in
+    // UsdStageNode3D before the open call).
+    static idtx_asset_io_t s_asset_io = {};
+    s_asset_io.globalize_path = idtxflow_globalize_path;
+    idtx_core_set_asset_io(&s_asset_io);
 
     GDREGISTER_CLASS(UsdStageNode3D)
     GDREGISTER_CLASS(UsdXformNode3D)

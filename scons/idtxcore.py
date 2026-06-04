@@ -228,6 +228,8 @@ def _sources():
         "core/src/idtx_aes.cpp",
         # idtx_scene: USD stage -> engine-neutral node tree (FlatTree converter).
         "core/src/idtx_scene.cpp",
+        # in-core ArResolver for res://, user:// via the host asset-IO callback.
+        "core/src/idtx_host_uri_resolver.cpp",
     ]
 
 

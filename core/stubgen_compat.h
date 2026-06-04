@@ -28,6 +28,7 @@
 #include "idtx_core/idtx_transport.h"
 #include "idtx_core/idtx_aes.h"
 #include "idtx_core/idtx_scene.h"
+#include "idtx_core/idtx_asset_io.h"
 
 #ifndef DISABLE_CFI_ICALL
 #define DISABLE_CFI_ICALL
