@@ -6,8 +6,6 @@
 #include <godot_cpp/classes/shape3d.hpp>
 #include <godot_cpp/classes/static_body3d.hpp>
 
-#include <pxr/base/tf/token.h>
-
 #include <idtxflow_godot/nodes/IUsdNode3D.h>
 
 #include "idtxflow/utils/Logger.h"

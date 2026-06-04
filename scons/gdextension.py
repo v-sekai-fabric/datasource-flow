@@ -141,11 +141,16 @@ def _build_extension(env):
     # from the checked-in .def; POSIX: idtx_core_stubs.cc dlsym thunks). See the
     # delay-load / stubs wiring below and source/idtx_core_loader.cpp.
     core_lib_basename = f"libidtx_core.{platform_name}.{build_arch}"
+    # CHI: the extension links ZERO OpenUSD. All USD work happens inside
+    # libidtx_core (loaded at runtime via the dlopen/delay-load table); the
+    # extension reaches it only through the flat C ABI (idtx_scene.h etc.). So
+    # usd_ms / tbb / libidtx_usd are NOT linked here — that is what removes the
+    # load-time OpenUSD dependency that made Godot's loader fail (Error 126).
+    # (The DLLs are still bundled in addons/IDTXFlow/bin for libidtx_core's own
+    # runtime use — see the install step below.)
     libs = [
-        "usd_ms", "tbb12" if platform_name == "windows" else "tbb.12",
         f"libgodot-cpp.{platform_name}.{build_target}.{build_arch}",
         "ixwebsocket",
-        "libidtx_usd",  # USD extension library
     ]
 
     # OpenSSL static libs (all platforms)
@@ -232,10 +237,34 @@ def _build_extension(env):
     delay_import_lib = None
     if platform_name == "windows":
         core_def = os.path.join("core", "generated", "libidtx_core.windows.def")
+
+        # The import module name MUST carry ".dll". libidtx_core's basename has
+        # dots (libidtx_core.windows.x86_64), so an import named without ".dll"
+        # makes the Windows loader read ".x86_64" as the extension, look for a
+        # literal "libidtx_core.windows.x86_64", and fail with Error 126 — even
+        # though the real file is "...x86_64.dll". The generated .def emits
+        # `LIBRARY libidtx_core.windows.x86_64` (no .dll), and a .def LIBRARY
+        # statement overrides `lib /NAME`, so we patch the LIBRARY line to ".dll"
+        # before building the import lib. Then /DELAYLOAD matches, the import is
+        # delay-bound, and the delay helper binds to the module idtx_core_loader
+        # pre-loads (which IS resolvable by its ".dll" name).
+        # Patch the .def's LIBRARY line to carry ".dll" (pure Python), then build
+        # the import lib with SCons's own `lib` string-action — which runs with the
+        # MSVC PATH (a bare subprocess can't find lib.exe on Windows).
+        def _patch_def_dllname(target, source, env, _basename=core_lib_basename):
+            import re as _re
+            p = str(source[0])
+            text = _re.sub(r'(?m)^LIBRARY\s+\S+', f'LIBRARY {_basename}.dll', open(p).read())
+            with open(p, "w") as f:
+                f.write(text)
+            return 0
+
+        _machine = "X64" if build_arch == "x86_64" else "ARM64"
         delay_import_lib = extension_env.Command(
             f"build/idtx_core/{core_lib_basename}_delayload.lib",
             core_def,
-            f'lib /nologo /def:"$SOURCE" /out:"$TARGET" /machine:{ "X64" if build_arch == "x86_64" else "ARM64" }',
+            [_patch_def_dllname,
+             f'lib /nologo /def:"$SOURCE" /out:"$TARGET" /machine:{_machine}'],
         )
     else:
         sources.append(extension_env.File("core/generated/idtx_core_stubs.cc"))

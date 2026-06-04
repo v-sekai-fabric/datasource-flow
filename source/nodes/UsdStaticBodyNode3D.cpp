@@ -1,7 +1,6 @@
 #include "UsdStaticBodyNode3D.h"
 
-#include "pxr/pxr.h"
-
+#include <string>
 #include <unordered_map>
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
@@ -10,7 +9,6 @@
 #include <godot_cpp/classes/collision_object3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
-#include <pxr/base/tf/token.h>
 
 #include "idtxflow/utils/Logger.h"
 
