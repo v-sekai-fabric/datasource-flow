@@ -346,6 +346,16 @@ IDTX_CORE_API int32_t idtx_avatar_add_material(idtx_avatar_t* avatar, idtx_mater
 IDTX_CORE_API int32_t idtx_avatar_get_material_count(const idtx_avatar_t* avatar);
 IDTX_CORE_API idtx_material_t* idtx_avatar_get_material(const idtx_avatar_t* avatar, int32_t index);
 
+// Decoded texture bytes keyed by the material's texture path. Populated on
+// import (the core resolves them through the asset resolver, so .usdz package
+// members are decoded too); a host that can't open the path as a file looks the
+// bytes up here. `out_bytes` must hold idtx_avatar_get_texture_byte_count bytes.
+IDTX_CORE_API int32_t     idtx_avatar_add_texture(idtx_avatar_t* avatar, const char* name, const uint8_t* bytes, int32_t byte_count);
+IDTX_CORE_API int32_t     idtx_avatar_get_texture_count(const idtx_avatar_t* avatar);
+IDTX_CORE_API const char* idtx_avatar_get_texture_name(const idtx_avatar_t* avatar, int32_t index);
+IDTX_CORE_API int32_t     idtx_avatar_get_texture_byte_count(const idtx_avatar_t* avatar, int32_t index);
+IDTX_CORE_API void        idtx_avatar_get_texture_bytes(const idtx_avatar_t* avatar, int32_t index, uint8_t* out_bytes);
+
 // ---------------------------------------------------------------------
 // idtx_spring_chain — one VRMC_springBone joint chain. Joints reference
 // bone indices in the avatar's skeleton. Dynamics fields match VRM 1.0:

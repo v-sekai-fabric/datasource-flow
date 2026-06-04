@@ -118,6 +118,11 @@ int32_t idtx_avatar_get_mesh_material(const idtx_avatar_t* avatar, int32_t mesh_
 int32_t idtx_avatar_add_material(idtx_avatar_t* avatar, idtx_material_t* mat);
 int32_t idtx_avatar_get_material_count(const idtx_avatar_t* avatar);
 idtx_material_t* idtx_avatar_get_material(const idtx_avatar_t* avatar, int32_t index);
+int32_t idtx_avatar_add_texture(idtx_avatar_t* avatar, const char* name, const uint8_t* bytes, int32_t byte_count);
+int32_t idtx_avatar_get_texture_count(const idtx_avatar_t* avatar);
+const char* idtx_avatar_get_texture_name(const idtx_avatar_t* avatar, int32_t index);
+int32_t idtx_avatar_get_texture_byte_count(const idtx_avatar_t* avatar, int32_t index);
+void idtx_avatar_get_texture_bytes(const idtx_avatar_t* avatar, int32_t index, uint8_t* out_bytes);
 
 # --- idtx_spring_chain -------------------------------------------------
 idtx_spring_chain_t* idtx_spring_chain_create(void);

@@ -289,6 +289,16 @@ IDTX_CORE_API idtx_avatar_t* idtx_scene_build_avatar(idtx_scene_t* scene) {
         }
     }
 
+    // Copy the decoded texture bytes (resolved through the asset resolver, so
+    // .usdz members are decoded) so a host can display textures without opening
+    // the path as a file. Keyed by the material's texture path.
+    for (const S::FTexture& tex : fs.textures) {
+        if (!tex.bytes.empty()) {
+            idtx_avatar_add_texture(avatar, tex.name.c_str(), tex.bytes.data(),
+                                    static_cast<int32_t>(tex.bytes.size()));
+        }
+    }
+
     // First skeleton node (most-bones wins, so a 1-bone decoy under a
     // multi-skeleton SkelRoot doesn't shadow the real rig).
     S::FlatNode* skel_node = nullptr;

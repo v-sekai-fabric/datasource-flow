@@ -4,8 +4,10 @@
 // IDTX_CORE_BUILDING_DLL is set by scons/idtxcore.py CPPDEFINES.
 #include "idtx_core/idtx_core.h"
 
+#include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct idtx_avatar
@@ -26,6 +28,10 @@ struct idtx_avatar
     std::vector<idtx_spring_chain_t*>     spring_chains;
     std::vector<idtx_spring_collider_t*>  spring_colliders;
     std::vector<idtx_physics_collider_t*> physics_colliders;
+    // Decoded texture bytes keyed by the material's texture path. Carried so a
+    // host can display textures even when the source is a .usdz package (whose
+    // members are not plain files) -- the core resolves them at import time.
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> textures;
 };
 
 extern "C" IDTX_CORE_API idtx_avatar_t* idtx_avatar_create(void)
@@ -152,6 +158,43 @@ extern "C" IDTX_CORE_API idtx_material_t* idtx_avatar_get_material(const idtx_av
 {
     if (avatar == nullptr || index < 0 || index >= static_cast<int32_t>(avatar->materials.size())) return nullptr;
     return avatar->materials[index];
+}
+
+// --- Decoded textures (path key -> bytes) --------------------------------
+
+extern "C" IDTX_CORE_API int32_t idtx_avatar_add_texture(
+    idtx_avatar_t* avatar, const char* name, const uint8_t* bytes, int32_t byte_count)
+{
+    if (avatar == nullptr || name == nullptr || bytes == nullptr || byte_count <= 0) { return -1; }
+    const int32_t idx = static_cast<int32_t>(avatar->textures.size());
+    avatar->textures.emplace_back(std::string(name),
+                                  std::vector<uint8_t>(bytes, bytes + byte_count));
+    return idx;
+}
+
+extern "C" IDTX_CORE_API int32_t idtx_avatar_get_texture_count(const idtx_avatar_t* avatar)
+{
+    return (avatar != nullptr) ? static_cast<int32_t>(avatar->textures.size()) : 0;
+}
+
+extern "C" IDTX_CORE_API const char* idtx_avatar_get_texture_name(const idtx_avatar_t* avatar, int32_t index)
+{
+    if (avatar == nullptr || index < 0 || index >= static_cast<int32_t>(avatar->textures.size())) { return ""; }
+    return avatar->textures[static_cast<size_t>(index)].first.c_str();
+}
+
+extern "C" IDTX_CORE_API int32_t idtx_avatar_get_texture_byte_count(const idtx_avatar_t* avatar, int32_t index)
+{
+    if (avatar == nullptr || index < 0 || index >= static_cast<int32_t>(avatar->textures.size())) { return 0; }
+    return static_cast<int32_t>(avatar->textures[static_cast<size_t>(index)].second.size());
+}
+
+extern "C" IDTX_CORE_API void idtx_avatar_get_texture_bytes(const idtx_avatar_t* avatar, int32_t index, uint8_t* out_bytes)
+{
+    if (avatar == nullptr || out_bytes == nullptr) { return; }
+    if (index < 0 || index >= static_cast<int32_t>(avatar->textures.size())) { return; }
+    const std::vector<uint8_t>& b = avatar->textures[static_cast<size_t>(index)].second;
+    if (!b.empty()) { std::memcpy(out_bytes, b.data(), b.size()); }
 }
 
 extern "C" IDTX_CORE_API int32_t idtx_avatar_add_spring_chain(idtx_avatar_t* avatar, idtx_spring_chain_t* chain)

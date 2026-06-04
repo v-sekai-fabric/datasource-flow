@@ -22,11 +22,12 @@ SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import threading
 import time
-from ctypes import POINTER, c_char_p, c_float, c_int32, c_void_p
+from ctypes import POINTER, c_char_p, c_float, c_int32, c_ubyte, c_void_p
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -87,6 +88,11 @@ def _bind_reader(lib) -> None:
         # material
         "idtx_material_get_base_color": ([c_void_p, f4], None),
         "idtx_material_get_base_color_texture": ([c_void_p], c_char_p),
+        # decoded texture bytes (resolves .usdz package members too)
+        "idtx_avatar_get_texture_count": ([c_void_p], c_int32),
+        "idtx_avatar_get_texture_name": ([c_void_p, c_int32], c_char_p),
+        "idtx_avatar_get_texture_byte_count": ([c_void_p, c_int32], c_int32),
+        "idtx_avatar_get_texture_bytes": ([c_void_p, c_int32, POINTER(c_ubyte)], None),
     }
     for fn, (argtypes, restype) in sigs.items():
         getattr(lib, fn).argtypes = argtypes
@@ -112,6 +118,10 @@ class MeshData:
 
 # Albedo textures, loaded once per path (RGB PIL images).
 _TEXTURE_CACHE: dict[str, Image.Image | None] = {}
+# Decoded texture bytes keyed by path, supplied by the core on import. This is
+# how a .usdz-packed avatar's textures arrive — their paths are package members,
+# not files PIL can open, so we decode the bytes the core resolved.
+_TEXTURE_BYTES: dict[str, bytes] = {}
 
 
 def _load_texture(path: str | None) -> Image.Image | None:
@@ -119,11 +129,28 @@ def _load_texture(path: str | None) -> Image.Image | None:
         return None
     if path not in _TEXTURE_CACHE:
         try:
-            _TEXTURE_CACHE[path] = Image.open(path).convert("RGB")
+            if path in _TEXTURE_BYTES:
+                _TEXTURE_CACHE[path] = Image.open(io.BytesIO(_TEXTURE_BYTES[path])).convert("RGB")
+            else:
+                _TEXTURE_CACHE[path] = Image.open(path).convert("RGB")
         except Exception as exc:  # missing / unreadable -> fall back to flat color
             print(f"[idtx] texture load failed for {path}: {exc}")
             _TEXTURE_CACHE[path] = None
     return _TEXTURE_CACHE[path]
+
+
+def _read_avatar_textures(lib, avatar) -> dict[str, bytes]:
+    """Pull the core's decoded texture bytes (path -> bytes) off the avatar."""
+    out: dict[str, bytes] = {}
+    for i in range(lib.idtx_avatar_get_texture_count(avatar)):
+        name = (lib.idtx_avatar_get_texture_name(avatar, i) or b"").decode("utf-8")
+        nbytes = lib.idtx_avatar_get_texture_byte_count(avatar, i)
+        if not name or nbytes <= 0:
+            continue
+        buf = (c_ubyte * nbytes)()
+        lib.idtx_avatar_get_texture_bytes(avatar, i, buf)
+        out[name] = bytes(buf)
+    return out
 
 
 def _textured_trimesh(md: "MeshData", verts: np.ndarray, image: Image.Image) -> trimesh.Trimesh:
@@ -291,6 +318,11 @@ class Host:
         if not avatar:
             raise RuntimeError(f"libidtx_core failed to import {usd_path.name}")
         name = (self.lib.idtx_avatar_get_name(avatar) or b"avatar").decode("utf-8")
+        # Refresh the decoded-texture table (handles .usdz package members) and
+        # drop any cached PIL images so they re-decode against the new source.
+        _TEXTURE_BYTES.clear()
+        _TEXTURE_BYTES.update(_read_avatar_textures(self.lib, avatar))
+        _TEXTURE_CACHE.clear()
         skel = self.lib.idtx_avatar_get_skeleton(avatar)
         bones = read_skeleton(self.lib, skel)
         nb = len(bones)
