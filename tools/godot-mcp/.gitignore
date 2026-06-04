@@ -1,2 +1,6 @@
 /.godot/
 /addons/
+# transient cross-engine transfer demo output
+Miroir_Re_Clothing_fromUnity.tscn
+Miroir_Re_fromUnity_USD.tscn
+miroir_geo.json
