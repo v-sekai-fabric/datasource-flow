@@ -29,6 +29,9 @@
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/subset.h>
 #include <pxr/usd/usdGeom/tokens.h>
+#include <pxr/usd/usdUtils/dependencies.h>
+
+#include <cstdio>   // std::remove for the usdz temp
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformOp.h>
 #include <pxr/usd/usdShade/material.h>
@@ -1006,6 +1009,24 @@ extern "C" IDTX_CORE_API void idtx_usd_export_opts_init(idtx_usd_export_opts_t* 
     opts->reflect_per_prim = 0;
 }
 
+namespace {
+// True when `p` names a .usdz package.
+bool path_is_usdz(const std::string& p) {
+    return p.size() >= 5 && p.compare(p.size() - 5, 5, ".usdz") == 0;
+}
+// A temp .usd(c) path beside a target .usdz.
+std::string usdz_temp_path(const std::string& usdz) { return usdz + ".pack.usdc"; }
+// Repackage a freshly written .usd(c) at `src` into a SELF-CONTAINED .usdz at
+// `usdz` — UsdUtilsCreateNewUsdzPackage collects every referenced asset (the
+// material albedo PNGs) into the zip with relative paths, so the avatar carries
+// its textures and never breaks when the external files move. Deletes the temp.
+int32_t finish_usdz(const std::string& src, const std::string& usdz) {
+    const bool ok = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath(src), usdz);
+    std::remove(src.c_str());
+    return ok ? 0 : 3;
+}
+}  // namespace
+
 extern "C" IDTX_CORE_API int32_t idtx_core_export_avatar_to_usd_ex(
     const idtx_avatar_t* avatar,
     const char* path,
@@ -1034,10 +1055,18 @@ extern "C" IDTX_CORE_API int32_t idtx_core_export_avatar_to_usd_ex(
 
     // ---- NEW_FLAT: fresh single-layer stage (the legacy behaviour). ----
     if (mode == IDTX_USD_NEW_FLAT) {
-        pxr::UsdStageRefPtr stage = pxr::UsdStage::CreateNew(std::string(path));
+        // A .usdz target is written as a temp .usdc, then packaged so its
+        // textures are embedded (self-contained avatar).
+        const bool usdz = path_is_usdz(path);
+        const std::string write_path = usdz ? usdz_temp_path(path) : std::string(path);
+        pxr::UsdStageRefPtr stage = pxr::UsdStage::CreateNew(write_path);
         if (!stage) return 2;
         idtx::core::detail::author_avatar_tree(stage, avatar);
         if (!stage->GetRootLayer()->Save()) return 3;
+        if (usdz) {
+            stage.Reset();   // release the temp layer before packaging
+            return finish_usdz(write_path, std::string(path));
+        }
         return 0;
     }
 
@@ -1053,7 +1082,10 @@ extern "C" IDTX_CORE_API int32_t idtx_core_export_avatar_to_usd_ex(
         idtx::core::detail::author_avatar_tree(src, avatar);
         pxr::SdfLayerRefPtr flat = src->Flatten();
         if (!flat) return 3;
-        if (!flat->Export(std::string(path))) return 3;
+        const bool usdz = path_is_usdz(path);
+        const std::string write_path = usdz ? usdz_temp_path(path) : std::string(path);
+        if (!flat->Export(write_path)) return 3;
+        if (usdz) return finish_usdz(write_path, std::string(path));
         return 0;
     }
 
