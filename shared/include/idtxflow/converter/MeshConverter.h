@@ -347,31 +347,50 @@ namespace converter
 				    std::vector<float> boneWeight;
 				    if (!joint_indices.empty())
 				    {
-				        // target engines using the bone influences might have limits on how many bone weights
-				        // they can handle. Godot for example can handle 4 or 8 bone weights. However, this should be
-				        // handled in the target engine specialization of the MeshBuilder
-				        for (int element=0; element < joint_index_element_size; ++element)
+				        // Target engines cap influences at 4 per vertex; ignore any extra.
+				        int num_elements = std::min(joint_index_element_size, 4);
+				        for (int element=0; element < num_elements; ++element)
 				        {
-				            int joint_element_index = pointIndex * joint_index_element_size + element;
-				            int joint_idx = joint_indices[joint_element_index];
-				            // if the mesh specifies a custom joint order we calculate the bone index from the given
-				            // joint order list (containing the bone path) of the mesh and the skeletons map
-				            // otherwise the joint index is taken as is (TODO: may require mapping as well)
-				            int bone_idx = joint_idx;
-				            if (joint_order.empty())
+				            // Index indices and weights with THEIR OWN element sizes, and
+				            // bounds-check both: malformed/short primvars (or a weights
+				            // stride != indices stride) must never read past either array.
+				            const size_t ji = static_cast<size_t>(pointIndex) * joint_index_element_size + element;
+				            const size_t wi = static_cast<size_t>(pointIndex) * joint_weights_element_size + element;
+				            if (ji >= joint_indices.size() || wi >= joint_weights.size())
 				            {
-				                bone_idx = joint_idx;
-				            } else
-				            {
-				                class pxr::TfToken joint = joint_order[joint_idx];
-				                // USD joints are available as names/token only. From the structure of the USD file
-				                // it has been ensured, that the skeleton has been converted already and contains a map from joint name
-				                // to bone index
-				                bone_idx = boneNameToIndex[joint.GetString()];
+				                break;
 				            }
 
-				            boneIdx.push_back(bone_idx);
-				            boneWeight.push_back(joint_weights[joint_element_index]);
+				            const int joint_idx = joint_indices[ji];
+				            int bone_idx = 0;
+				            bool resolved = false;
+				            if (joint_order.empty())
+				            {
+				                // No per-mesh joint order: the indices already address the
+				                // global skeleton joint list as-is.
+				                if (joint_idx >= 0)
+				                {
+				                    bone_idx = joint_idx;
+				                    resolved = true;
+				                }
+				            }
+				            else if (joint_idx >= 0 && joint_idx < static_cast<int>(joint_order.size()))
+				            {
+				                // Per-mesh subset: indices are LOCAL to joint_order. Map the
+				                // joint NAME to its global skeleton bone index via find()
+				                // (never operator[] — an unknown name must not insert a 0).
+				                std::map<std::string, int32_t>::const_iterator it =
+				                    boneNameToIndex.find(joint_order[joint_idx].GetString());
+				                if (it != boneNameToIndex.end())
+				                {
+				                    bone_idx = it->second;
+				                    resolved = true;
+				                }
+				            }
+				            // Unresolved influences bind to bone 0 with zero weight so they
+				            // cannot deform the mesh (avoids the "spikes from origin" artefact).
+				            boneIdx.push_back(static_cast<uint32_t>(bone_idx));
+				            boneWeight.push_back(resolved ? joint_weights[wi] : 0.0f);
 				        }
 				    }
 
