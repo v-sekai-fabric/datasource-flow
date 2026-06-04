@@ -312,6 +312,8 @@ class Host:
         self._meshes: list[MeshData] = []
         self._weights: dict[str, float] = {}   # blendshape name -> weight
         self.name = "avatar"
+        self.center = np.zeros(3, np.float32)  # avatar AABB centre (Y-up frame)
+        self.radius = 1.0                       # half-diagonal, for camera framing
 
     def load(self, usd_path: Path):
         avatar = self.lib.idtx_core_import_avatar_from_usd(str(usd_path).encode("utf-8"))
@@ -341,6 +343,12 @@ class Host:
             self._bones = bones
             # collect the blend-shape names across meshes for the GUI
             self._weights = {bn: 0.0 for md in meshes for (bn, _) in md.blendshapes}
+            # AABB over all verts for camera framing.
+            if meshes:
+                allv = np.concatenate([m.verts for m in meshes], axis=0)
+                lo, hi = allv.min(axis=0), allv.max(axis=0)
+                self.center = ((lo + hi) * 0.5).astype(np.float32)
+                self.radius = max(float(np.linalg.norm(hi - lo)) * 0.5, 1e-3)
             self._rebuild_scene()
             tris = sum(len(m.faces) for m in meshes)
         return name, len(meshes), tris, nb, len(self._weights)
@@ -417,6 +425,16 @@ def main() -> None:
     server.scene.set_up_direction("+y")
 
     host = Host(lib, server)
+
+    # Frame the avatar for every client that connects: a front, slightly raised
+    # Y-up view sized to the avatar's AABB, so it isn't tiny/off-centre on open.
+    @server.on_client_connect
+    def _frame(client: viser.ClientHandle) -> None:
+        c = host.center
+        r = host.radius
+        client.camera.up_direction = (0.0, 1.0, 0.0)
+        client.camera.position = (float(c[0]), float(c[1]) + r * 0.25, float(c[2]) + r * 2.6)
+        client.camera.look_at = (float(c[0]), float(c[1]), float(c[2]))
     status = server.gui.add_text("Status", initial_value="loading…", disabled=True)
 
     import_btn = server.gui.add_upload_button(
