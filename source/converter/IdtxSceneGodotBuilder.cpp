@@ -498,13 +498,13 @@ std::vector<Node3D*> BuildGodotNodesFromScene(idtx_scene* scene) {
         else roots.push_back(built[i]);
     }
 
-    // Coordinate fix-up at the root (ConvertStagePostProcess, now host-side):
-    // swing up-axis to Godot's Y-up + scale by metersPerUnit.
-    const idtx_axis_t up = idtx_scene_get_up_axis(sc);
+    // The up-axis change of basis is fully baked into the geometry + transforms
+    // by the core converter, which always emits Y-up (idtx_scene_get_up_axis is
+    // always IDTX_AXIS_Y now), so there is NO host-side root rotation — a root
+    // rotation was never a full conversion. Only the stage's metersPerUnit scale
+    // remains a host concern.
     const float mpu = (float)idtx_scene_get_meters_per_unit(sc);
     for (Node3D* root : roots) {
-        if (up == IDTX_AXIS_Z)      root->rotate_x(Math::deg_to_rad(-90.0));
-        else if (up == IDTX_AXIS_X) root->rotate_z(Math::deg_to_rad(90.0));
         root->set_scale(root->get_scale() * mpu);
     }
     return roots;
