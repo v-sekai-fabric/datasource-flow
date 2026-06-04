@@ -6,12 +6,13 @@ class_name MCPCommandBuffer
 ## Motivation (AWS Builders' Library, "Reliability and constant work"): the
 ## editor poll must NOT do work proportional to incoming MCP load, or a burst of
 ## requests spikes a frame and stalls the editor. So we decouple ingestion from
-## execution: requests land in a FIXED-CAPACITY ring (bounded memory + explicit
-## backpressure when full), and each frame we drain a CONSTANT budget of them —
-## the per-frame cost has a fixed upper bound no matter how many are queued.
+## execution: commands are RECORDED into a FIXED-CAPACITY ring (bounded memory +
+## explicit backpressure when full), and each frame we SUBMIT a CONSTANT budget
+## of them — the per-frame cost has a fixed upper bound no matter how many queue.
 ##
-## FIFO. enqueue() returns false (and bumps `dropped`) when full so the caller
-## can answer the client immediately rather than growing unboundedly.
+## Graphics-API command-buffer vocabulary: record() to enqueue, submit() to drain
+## a budget. FIFO. record() returns false (and bumps `dropped`) when full so the
+## caller can answer the client immediately rather than growing unboundedly.
 
 var _capacity: int
 var _ring: Array
@@ -40,8 +41,8 @@ func is_empty() -> bool:
 	return _size == 0
 
 
-## Enqueue one item. Returns false (and increments `dropped`) if full.
-func enqueue(item) -> bool:
+## Record one command. Returns false (and increments `dropped`) if full.
+func record(item) -> bool:
 	if _size >= _capacity:
 		dropped += 1
 		return false
@@ -51,9 +52,9 @@ func enqueue(item) -> bool:
 	return true
 
 
-## Drain up to `budget` items in FIFO order — the constant per-frame work bound.
-## Returns the drained items (0..budget).
-func drain(budget: int) -> Array:
+## Submit up to `budget` recorded commands in FIFO order — the constant per-frame
+## work bound. Returns the submitted items (0..budget).
+func submit(budget: int) -> Array:
 	var out := []
 	var n: int = min(max(0, budget), _size)
 	for _i in n:

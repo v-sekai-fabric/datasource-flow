@@ -12,12 +12,12 @@ class_name MCPHttpServer
 const MCPProtocolLib = preload("mcp_protocol.gd")
 const BufferLib = preload("mcp_command_buffer.gd")
 const DEFAULT_PORT := 8788
-const DRAIN_PER_FRAME := 16     # constant per-frame execution budget
+const SUBMIT_PER_FRAME := 16    # constant per-frame execution budget
 
 var protocol = MCPProtocolLib.new()
 var _server := TCPServer.new()
 var _clients: Array = []        # connections still reading a request
-var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work drain
+var _buffer = BufferLib.new(256)  # parsed requests awaiting constant-work submit
 
 # DNS-rebinding (Origin) protection. The MCP spec says servers MUST validate
 # Origin, but the reference TypeScript/Python SDKs ship it DISABLED by default
@@ -98,7 +98,7 @@ func _origin_allowed(origin: String) -> bool:
 func poll() -> void:
 	# --- ingest: accept + parse complete requests into the buffer ----------
 	# Bounded heavy work: parsing is cheap; the expensive part (route ->
-	# protocol -> command dispatch) is deferred to the constant-budget drain.
+	# protocol -> command dispatch) is deferred to the constant-budget submit.
 	while _server.is_connection_available():
 		_clients.append({ "peer": _server.take_connection(), "buf": PackedByteArray() })
 	for c in _clients.duplicate():
@@ -116,12 +116,12 @@ func poll() -> void:
 		if req != null:
 			_clients.erase(c)                         # request complete; leaves the reading set
 			req["peer"] = peer
-			if not _buffer.enqueue(req):
+			if not _buffer.record(req):
 				# backpressure: answer immediately rather than queueing unboundedly
 				_write(peer, { "code": 503, "ctype": "text/plain", "body": "server busy" })
 
-	# --- constant-work drain: execute at most DRAIN_PER_FRAME requests ------
-	for item in _buffer.drain(DRAIN_PER_FRAME):
+	# --- constant-work submit: execute at most SUBMIT_PER_FRAME requests ----
+	for item in _buffer.submit(SUBMIT_PER_FRAME):
 		var r := route(item.method, item.path, item.headers, item.body)
 		_write(item.peer, r)
 

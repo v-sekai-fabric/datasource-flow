@@ -21,10 +21,11 @@ directly in GDScript over `TCPServer`, on `http://127.0.0.1:8788/mcp`:
   replying `application/json` or `text/event-stream` per `Accept`).
 - `mcp_protocol.gd` — the MCP / JSON-RPC layer (uses Godot's built-in `JSONRPC`
   for envelopes): `initialize`, `tools/list`, `tools/call`, `ping`.
-- `mcp_command_buffer.gd` — fixed-capacity ring drained at a **constant
-  per-frame budget**, so editor frame cost doesn't scale with MCP request load
-  (bounded work + backpressure; AWS "constant work" pattern). Parsing ingests
-  into it; a fixed budget (`DRAIN_PER_FRAME`) of requests is executed per frame.
+- `mcp_command_buffer.gd` — fixed-capacity ring (graphics-API command-buffer
+  vocabulary: `record()` to enqueue, `submit()` to drain) submitted at a
+  **constant per-frame budget**, so editor frame cost doesn't scale with MCP
+  request load (bounded work + backpressure; AWS "constant work" pattern).
+  Parsing records into it; a fixed budget (`SUBMIT_PER_FRAME`) executes per frame.
 - `mcp_commands.gd` — transport-free command logic (`MCPCommands`) against
   `EditorInterface` + the edited `SceneTree`. Unit-tested headless.
 
