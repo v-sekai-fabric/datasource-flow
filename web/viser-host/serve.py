@@ -28,7 +28,7 @@ import sys
 import tempfile
 import threading
 import time
-from ctypes import POINTER, c_char_p, c_float, c_int32, c_ubyte, c_void_p
+from ctypes import POINTER, c_char_p, c_double, c_float, c_int32, c_ubyte, c_void_p
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,6 +98,23 @@ def _bind_reader(lib) -> None:
         "idtx_avatar_get_texture_name": ([c_void_p, c_int32], c_char_p),
         "idtx_avatar_get_texture_byte_count": ([c_void_p, c_int32], c_int32),
         "idtx_avatar_get_texture_bytes": ([c_void_p, c_int32, POINTER(c_ubyte)], None),
+        # scene + skeletal animation (the avatar API doesn't carry the clip, so we
+        # re-open the same file as a scene — USD caches the layer, so it's cheap —
+        # and read the skeleton node's animation tracks for timeline playback).
+        "idtx_core_import_scene_from_usd": ([c_char_p], c_void_p),
+        "idtx_core_scene_destroy": ([c_void_p], None),
+        "idtx_scene_get_node_count": ([c_void_p], c_int32),
+        "idtx_scene_get_node": ([c_void_p, c_int32], c_void_p),
+        "idtx_node_get_skeleton": ([c_void_p], c_void_p),
+        "idtx_node_get_animation": ([c_void_p], c_void_p),
+        "idtx_anim_get_length": ([c_void_p], c_float),
+        "idtx_anim_get_track_count": ([c_void_p], c_int32),
+        "idtx_anim_track_get_bone_name": ([c_void_p, c_int32], c_char_p),
+        "idtx_anim_track_get_type": ([c_void_p, c_int32], c_int32),
+        "idtx_anim_track_get_key_count": ([c_void_p, c_int32], c_int32),
+        "idtx_anim_track_get_key_time": ([c_void_p, c_int32, c_int32], c_double),
+        "idtx_anim_track_get_key_vec3": ([c_void_p, c_int32, c_int32, f4], None),
+        "idtx_anim_track_get_key_quat": ([c_void_p, c_int32, c_int32, f4], None),
     }
     for fn, (argtypes, restype) in sigs.items():
         getattr(lib, fn).argtypes = argtypes
@@ -137,6 +154,173 @@ def _material_color_tex(lib, avatar, mat_idx: int):
             t = lib.idtx_material_get_base_color_texture(mat)
             tex_path = t.decode("utf-8") if t else None
     return color, tex_path
+
+
+# --------------------------------------------------------------------------
+# Skeletal animation: read the clip + a forward-kinematics sampler. Playback
+# updates ONLY the per-bone transforms (never re-sends geometry), so a frame is
+# a handful of small transform messages, not the whole scene.
+# --------------------------------------------------------------------------
+
+def _quat_xyzw_to_mat(q):
+    x, y, z, w = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w),     2 * (x * z + y * w)],
+        [2 * (x * y + z * w),     1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w),     2 * (y * z + x * w),     1 - 2 * (x * x + y * y)],
+    ], np.float64)
+
+
+def _mat_to_quat_wxyz(R):
+    t = R[0, 0] + R[1, 1] + R[2, 2]
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2
+        w, x, y, z = 0.25 * s, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
+        w, x, y, z = (R[2, 1] - R[1, 2]) / s, 0.25 * s, (R[0, 1] + R[1, 0]) / s, (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
+        w, x, y, z = (R[0, 2] - R[2, 0]) / s, (R[0, 1] + R[1, 0]) / s, 0.25 * s, (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
+        w, x, y, z = (R[1, 0] - R[0, 1]) / s, (R[0, 2] + R[2, 0]) / s, (R[1, 2] + R[2, 1]) / s, 0.25 * s
+    q = np.array([w, x, y, z], np.float64)
+    return q / np.linalg.norm(q)
+
+
+def _slerp(q0, q1, u):  # xyzw
+    d = float(np.dot(q0, q1))
+    if d < 0:
+        q1 = -q1
+        d = -d
+    if d > 0.9995:
+        r = q0 + u * (q1 - q0)
+        return r / np.linalg.norm(r)
+    th = np.arccos(d)
+    s = np.sin(th)
+    return (np.sin((1 - u) * th) / s) * q0 + (np.sin(u * th) / s) * q1
+
+
+@dataclass
+class SkeletalClip:
+    length: float
+    # bone name -> {track_type: (times (K,), values (K,3|4))}; type 0=T,1=R(xyzw),2=S
+    tracks: dict
+
+
+def read_animation(lib, usd_path) -> "SkeletalClip | None":
+    """Re-open the file as a scene and read the skeleton node's animation clip.
+    The avatar API doesn't carry it; the layer is already cached so this is cheap."""
+    scene = lib.idtx_core_import_scene_from_usd(str(usd_path).encode("utf-8"))
+    if not scene:
+        return None
+    try:
+        for i in range(lib.idtx_scene_get_node_count(scene)):
+            node = lib.idtx_scene_get_node(scene, i)
+            if not lib.idtx_node_get_skeleton(node):
+                continue
+            anim = lib.idtx_node_get_animation(node)
+            if not anim:
+                continue
+            tracks: dict = {}
+            for t in range(lib.idtx_anim_get_track_count(anim)):
+                bone = (lib.idtx_anim_track_get_bone_name(anim, t) or b"").decode("utf-8")
+                typ = lib.idtx_anim_track_get_type(anim, t)
+                kc = lib.idtx_anim_track_get_key_count(anim, t)
+                if kc == 0:
+                    continue
+                times = np.empty(kc, np.float64)
+                vals = np.empty((kc, 4 if typ == 1 else 3), np.float64)
+                for k in range(kc):
+                    times[k] = lib.idtx_anim_track_get_key_time(anim, t, k)
+                    if typ == 1:
+                        q = (c_float * 4)()
+                        lib.idtx_anim_track_get_key_quat(anim, t, k, q)
+                        vals[k] = (q[0], q[1], q[2], q[3])
+                    else:
+                        v = (c_float * 3)()
+                        lib.idtx_anim_track_get_key_vec3(anim, t, k, v)
+                        vals[k] = (v[0], v[1], v[2])
+                tracks.setdefault(bone, {})[typ] = (times, vals)
+            if tracks:
+                return SkeletalClip(float(lib.idtx_anim_get_length(anim)), tracks)
+    finally:
+        lib.idtx_core_scene_destroy(scene)
+    return None
+
+
+class AnimRig:
+    """Forward-kinematics sampler. Given the bones (world bind poses + parents)
+    and a clip, sample(t) returns each bone's world (wxyz, position) for viser."""
+
+    def __init__(self, bones, clip: SkeletalClip):
+        self.clip = clip
+        self.parents = [b.parent for b in bones]
+        self.names = [b.name for b in bones]
+        # World bind matrices, and rest LOCAL T/R(xyzw)/S decomposed from them.
+        self.world_bind = []
+        self.rest_T, self.rest_R, self.rest_S = [], [], []
+        for b in bones:
+            m = np.eye(4)
+            m[:3, :3] = _quat_xyzw_to_mat((b.wxyz[1], b.wxyz[2], b.wxyz[3], b.wxyz[0]))
+            m[:3, 3] = b.position
+            self.world_bind.append(m)
+        for i, b in enumerate(bones):
+            p = self.parents[i]
+            local = np.linalg.inv(self.world_bind[p]) @ self.world_bind[i] if p >= 0 else self.world_bind[i]
+            R = local[:3, :3].copy()
+            s = np.linalg.norm(R, axis=0)
+            s[s == 0] = 1.0
+            self.rest_T.append(local[:3, 3].copy())
+            self.rest_R.append(_mat_to_quat_wxyz(R / s))  # wxyz
+            self.rest_S.append(s)
+
+    @staticmethod
+    def _sample(track, t):
+        times, vals = track
+        if t <= times[0]:
+            return vals[0]
+        if t >= times[-1]:
+            return vals[-1]
+        j = int(np.searchsorted(times, t))
+        u = (t - times[j - 1]) / (times[j] - times[j - 1])
+        return vals[j - 1], vals[j], u
+
+    def sample(self, t):
+        out = [None] * len(self.names)
+        world = [None] * len(self.names)
+        for i in range(len(self.names)):
+            ch = self.clip.tracks.get(self.names[i], {})
+            # translation
+            if 0 in ch:
+                r = self._sample(ch[0], t)
+                T = r if isinstance(r, np.ndarray) else r[0] + (r[1] - r[0]) * r[2]
+            else:
+                T = self.rest_T[i]
+            # rotation (wxyz rest, xyzw track)
+            if 1 in ch:
+                r = self._sample(ch[1], t)
+                q = r if isinstance(r, np.ndarray) else _slerp(r[0], r[1], r[2])  # xyzw
+            else:
+                w = self.rest_R[i]
+                q = np.array([w[1], w[2], w[3], w[0]])  # wxyz->xyzw
+            # scale
+            if 2 in ch:
+                r = self._sample(ch[2], t)
+                S = r if isinstance(r, np.ndarray) else r[0] + (r[1] - r[0]) * r[2]
+            else:
+                S = self.rest_S[i]
+            local = np.eye(4)
+            local[:3, :3] = _quat_xyzw_to_mat(q) * S
+            local[:3, 3] = T
+            p = self.parents[i]
+            world[i] = world[p] @ local if (p >= 0 and world[p] is not None) else local
+            R = world[i][:3, :3].copy()
+            sc = np.linalg.norm(R, axis=0)
+            sc[sc == 0] = 1.0
+            out[i] = (_mat_to_quat_wxyz(R / sc), world[i][:3, 3].copy())
+        return out
 
 
 # Albedo textures, loaded once per path (RGB PIL images).
@@ -347,6 +531,9 @@ class Host:
         self.name = "avatar"
         self.center = np.zeros(3, np.float32)  # avatar AABB centre (Y-up frame)
         self.radius = 1.0                       # half-diagonal, for camera framing
+        self._rig: AnimRig | None = None        # FK sampler for the skeletal clip
+        self.anim_length = 0.0                  # clip length in seconds (0 = none)
+        self._skinned: list = []                # skinned-mesh handles to drive
 
     def load(self, usd_path: Path):
         avatar = self.lib.idtx_core_import_avatar_from_usd(str(usd_path).encode("utf-8"))
@@ -367,6 +554,10 @@ class Host:
             if md is not None:
                 meshes.append(md)
 
+        # Skeletal animation clip (read via the scene API; the avatar doesn't carry it).
+        clip = read_animation(self.lib, usd_path) if nb > 0 else None
+        rig = AnimRig(bones, clip) if clip else None
+
         with self._lock:
             if self._avatar is not None:
                 self.lib.idtx_avatar_destroy(self._avatar)
@@ -374,6 +565,8 @@ class Host:
             self.name = name
             self._meshes = meshes
             self._bones = bones
+            self._rig = rig
+            self.anim_length = clip.length if clip else 0.0
             # collect the blend-shape names across meshes for the GUI
             self._weights = {bn: 0.0 for md in meshes for (bn, _) in md.blendshapes}
             # AABB over all verts for camera framing.
@@ -400,9 +593,17 @@ class Host:
             for node in self._nodes:
                 node.remove()
         self._nodes.clear()
+        self._skinned.clear()
         bones = getattr(self, "_bones", [])
         bone_wxyzs = [b.wxyz for b in bones]
         bone_pos = [b.position for b in bones]
+        # viser's add_mesh_skinned resolves exactly 4 influences per vertex, so a
+        # rig with fewer than 4 bones (e.g. a 2-bone test) needs weightless
+        # identity padding bones; the dense skin is padded to match.
+        skin_pad = max(0, 4 - len(bones))
+        if skin_pad:
+            bone_wxyzs = bone_wxyzs + [np.array([1.0, 0.0, 0.0, 0.0])] * skin_pad
+            bone_pos = bone_pos + [np.zeros(3)] * skin_pad
         def add_piece(path, md, verts, faces, color, tex_path):
             """Render one mesh piece (whole mesh or one UsdGeomSubset range)."""
             image = _load_texture(tex_path)
@@ -411,10 +612,17 @@ class Host:
                 return self.server.scene.add_mesh_trimesh(
                     path, _textured_trimesh(md, verts, faces, image))
             if md.skin is not None and bones:
-                return self.server.scene.add_mesh_skinned(
+                sk = md.skin
+                if skin_pad:
+                    sk = np.concatenate([sk, np.zeros((sk.shape[0], skin_pad), np.float32)], axis=1)
+                handle = self.server.scene.add_mesh_skinned(
                     path, vertices=verts, faces=faces,
                     bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
-                    skin_weights=md.skin, color=color, material="toon3", side="double")
+                    skin_weights=sk, color=color, material="toon3", side="double")
+                # Track skinned handles so the timeline can drive their bones
+                # directly — animation re-sends only bone transforms, not geometry.
+                self._skinned.append(handle)
+                return handle
             return self.server.scene.add_mesh_simple(
                 path, vertices=verts, faces=faces, color=color, side="double")
 
@@ -437,6 +645,23 @@ class Host:
                         add_piece(f"{path}/mat{si}", md, verts, sub_faces, scol, stex))
             else:
                 self._nodes.append(add_piece(path, md, verts, md.faces, md.color, md.tex_path))
+
+    def set_anim_time(self, t: float) -> None:
+        """Pose the skeleton at time `t`. Updates ONLY the per-bone transforms on
+        each skinned mesh — a frame is a handful of small transform messages, the
+        geometry is never re-sent."""
+        with self._lock:
+            rig = self._rig
+            handles = list(self._skinned)
+        if rig is None or not handles:
+            return
+        poses = rig.sample(float(t))
+        for handle in handles:
+            hb = handle.bones
+            for i in range(min(len(hb), len(poses))):
+                wxyz, pos = poses[i]
+                hb[i].wxyz = wxyz
+                hb[i].position = pos
 
     def set_blendshape(self, name: str, weight: float) -> None:
         with self._lock:
@@ -505,12 +730,53 @@ def main() -> None:
                     host.set_blendshape(_name, _slider.value)
         return new_folder
 
+    # Animation controls. Rebuilt per load so the time slider spans the clip; the
+    # playback thread advances time and drives only the bones (no geometry re-send).
+    anim_ctl: dict = {"folder": server.gui.add_folder("Animation"), "play": None, "time": None}
+
+    def rebuild_anim_gui() -> None:
+        anim_ctl["folder"].remove()
+        folder = server.gui.add_folder("Animation")
+        anim_ctl["folder"] = folder
+        with folder:
+            if host.anim_length <= 0.0:
+                server.gui.add_text("(no animation)", initial_value="", disabled=True)
+                anim_ctl["play"] = None
+                anim_ctl["time"] = None
+                return
+            anim_ctl["play"] = server.gui.add_checkbox("Play", initial_value=True)
+            ts = server.gui.add_slider(
+                "Time (s)", min=0.0, max=max(round(host.anim_length, 3), 0.01),
+                step=0.01, initial_value=0.0)
+            anim_ctl["time"] = ts
+
+            @ts.on_update
+            def _(_e, _ts=ts) -> None:
+                host.set_anim_time(_ts.value)
+
     def do_load(path: Path, label: str) -> None:
         nonlocal shapes_folder
         name, nmesh, tris, nb, nshapes = host.load(path)
-        status.value = f"{label}: {name} — {nmesh} mesh, {tris} tris, {nb} bones, {nshapes} shapes"
+        anim = f", anim {host.anim_length:.1f}s" if host.anim_length > 0 else ""
+        status.value = f"{label}: {name} — {nmesh} mesh, {tris} tris, {nb} bones, {nshapes} shapes{anim}"
         shapes_folder = rebuild_blendshape_gui()
+        rebuild_anim_gui()
         print(f"[idtx] {status.value}")
+
+    def _playback() -> None:
+        dt = 1.0 / 30.0
+        while True:
+            time.sleep(dt)
+            play, ts = anim_ctl["play"], anim_ctl["time"]
+            if ts is None or play is None or not play.value or host.anim_length <= 0.0:
+                continue
+            t = ts.value + dt
+            if t > host.anim_length:
+                t = 0.0
+            host.set_anim_time(t)
+            ts.value = t  # move the slider to match
+
+    threading.Thread(target=_playback, daemon=True).start()
 
     @import_btn.on_upload
     def _(_event) -> None:
