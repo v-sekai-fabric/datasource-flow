@@ -604,36 +604,42 @@ class Host:
         if skin_pad:
             bone_wxyzs = bone_wxyzs + [np.array([1.0, 0.0, 0.0, 0.0])] * skin_pad
             bone_pos = bone_pos + [np.zeros(3)] * skin_pad
-        has_anim = self._rig is not None
-
-        def add_skinned(path, md, verts, faces, color):
+        def add_skinned(path, md, verts, faces, color, tex_path):
             sk = md.skin
             if skin_pad:
                 sk = np.concatenate([sk, np.zeros((sk.shape[0], skin_pad), np.float32)], axis=1)
+            # Textured skinning (our viser fork): carry albedo + UVs alongside the
+            # skin weights so the mesh keeps its texture AND deforms. The core hands
+            # canonical glTF UVs (top-left origin) and the client samples with
+            # flipY=false, so pass them straight through — no extra flip.
+            image = _load_texture(tex_path)
+            uvs = tex = None
+            material = "toon3"
+            if image is not None and md.uvs is not None:
+                uvs = md.uvs.astype(np.float32)
+                tex = np.asarray(image, dtype=np.uint8)
+                material = "standard"
             handle = self.server.scene.add_mesh_skinned(
                 path, vertices=verts, faces=faces,
                 bone_wxyzs=bone_wxyzs, bone_positions=bone_pos,
-                skin_weights=sk, color=color, material="toon3", side="double")
+                skin_weights=sk, color=color, material=material, side="double",
+                uvs=uvs, texture=tex)
             self._skinned.append(handle)
             return handle
 
         def add_piece(path, md, verts, faces, color, tex_path):
             """Render one mesh piece (whole mesh or one UsdGeomSubset range)."""
             skinned = md.skin is not None and bones
-            # viser's GPU-skinning primitive (add_mesh_skinned) carries only a flat
-            # colour — texturing a skinned mesh needs a glTF path we intentionally
-            # avoid (OpenUSD-native). So when the avatar has an animation clip, skin
-            # it (it plays, flat-coloured); only a STATIC skinned mesh keeps its
-            # albedo via the textured trimesh path.
-            if skinned and has_anim:
-                return add_skinned(path, md, verts, faces, color)
+            # A skinned mesh routes through add_mesh_skinned, which now carries its
+            # texture (fork: textured GPU skinning), so it keeps albedo AND animates
+            # via bone-only updates. Static meshes take the trimesh albedo path.
+            if skinned:
+                return add_skinned(path, md, verts, faces, color, tex_path)
             image = _load_texture(tex_path)
             if image is not None and md.uvs is not None:
                 # Textured: actual albedo, double-sided (winding-proof).
                 return self.server.scene.add_mesh_trimesh(
                     path, _textured_trimesh(md, verts, faces, image))
-            if skinned:
-                return add_skinned(path, md, verts, faces, color)
             return self.server.scene.add_mesh_simple(
                 path, vertices=verts, faces=faces, color=color, side="double")
 
