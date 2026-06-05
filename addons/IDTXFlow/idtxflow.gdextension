@@ -2,10 +2,6 @@
 
 entry_symbol = "idtxflow_library_init"
 compatibility_minimum = "4.5"
-; Allow the editor to hot-reload the library when it is rebuilt on disk, so an
-; addon recompile is picked up without restarting Godot. Godot loads a private
-; copy of the DLL, leaving the deployed file writable for the next scons build.
-reloadable = true
 
 [libraries]
 ; Relative paths ensure that our GDExtension can be placed anywhere in the project directory.
