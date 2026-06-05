@@ -109,8 +109,6 @@ void UsdStageNode3D::_reconstruct_node()
     if (packed_scene.is_null()) { open_and_convert_stage(); return; }
     Node3D* cached_root = cast_to<Node3D>(packed_scene->instantiate());
     if (!cached_root) return;
-    // Mark this node as an instance of its cached packed scene.
-    set_scene_file_path(cached_scene_name_);
     for (int i = 0; i < cached_root->get_child_count(); i++) {
         if (Node3D* child = cast_to<Node3D>(cached_root->get_child(i))) {
             Node3D* duplicated = cast_to<Node3D>(child->duplicate());
@@ -180,9 +178,6 @@ void UsdStageNode3D::_pack_and_save_cached_scene()
         // CDN-streamed cache.
         ResourceSaver::get_singleton()->save(packed_scene, cached_scene_name_,
                                              ResourceSaver::FLAG_COMPRESS);
-        // Associate this node with its cached packed scene so Godot treats it as
-        // an instanced scene (collapsed subtree in the editor, reloadable).
-        set_scene_file_path(cached_scene_name_);
     }
     packed_scene.unref();
 }
