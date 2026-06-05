@@ -23,6 +23,7 @@ SPDX-License-Identifier: Apache-2.0 OR MPL-2.0
 from __future__ import annotations
 
 import io
+import os
 import sys
 import tempfile
 import threading
@@ -38,7 +39,8 @@ from PIL import Image
 
 # web/viser-host -> web -> repo root
 REPO = Path(__file__).resolve().parents[2]
-USD_PATH = REPO / "build" / "miroir_from_unity.usda"
+# Default avatar to auto-load; override with IDTX_VISER_USD for ad-hoc test files.
+USD_PATH = Path(os.environ.get("IDTX_VISER_USD", str(REPO / "build" / "miroir_from_unity.usda")))
 
 # Reuse the proven Blender ctypes loader: it finds libidtx_core, wires its
 # OpenUSD dependency dirs, calls idtx_core_init(), and binds the export side +
@@ -185,7 +187,14 @@ def _textured_trimesh(md: "MeshData", verts: np.ndarray, faces: np.ndarray,
         roughnessFactor=1.0,
         doubleSided=True,
     )
-    visual = trimesh.visual.TextureVisuals(uv=md.uvs, material=material, image=image)
+    # The core hands us canonical glTF UVs (top-left origin, what a direct
+    # GLTFLoader expects). trimesh's TextureVisuals uses the bottom-left (OpenGL)
+    # convention and re-flips V when it exports the GLB, so feeding glTF UVs
+    # straight in renders every texture upside-down. Flip V once here to cancel
+    # trimesh's flip.
+    uv = md.uvs.copy()
+    uv[:, 1] = 1.0 - uv[:, 1]
+    visual = trimesh.visual.TextureVisuals(uv=uv, material=material, image=image)
     kwargs = {"vertices": verts, "faces": faces, "visual": visual, "process": False}
     if md.normals is not None:
         kwargs["vertex_normals"] = md.normals
