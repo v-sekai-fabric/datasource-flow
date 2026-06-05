@@ -298,21 +298,77 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
     if (anim && !anim->Tracks.empty()) {
         n->animation = flat_detail::to_flat_animation(*anim);
     }
-    for (const auto& bone : skel.Bones)
+    for (const Bone<FT>& bone : skel.Bones) {
         idtx_skeleton_add_bone(n->skeleton, bone.Name.c_str(), bone.parentIndex,
                                bone.restTransform.m, bone.bindPose.m);
+    }
     // One skinned mesh PER source skin target (USD mesh prim); its GeomSubsets
     // become material subsets of that mesh, so the authored per-material bindings
     // survive instead of collapsing to one. Separate prims stay separate meshes.
-    for (const auto& target : skel.SkinTargets) {
+    for (const SkinTargetDescription<FT>& target : skel.SkinTargets) {
         SC::FMeshData surf;
-        for (const auto& md : target.MeshDescriptions) {
+        for (const MeshDescription<UsdMeshConverter<FT>::MeshDataType>& md : target.MeshDescriptions) {
             flat_detail::append_subset(surf, md.meshData, flat_detail::material_of(OwningEntity, md));
         }
         if (!surf.Vertices.empty()) {
             n->skin_materials.push_back(surf.Subsets.empty() ? -1 : surf.Subsets.front().material);
             n->skin_names.push_back(target.Name);   // preserve the skin-target prim name
             n->skin_surfaces.push_back(std::move(surf));
+        }
+    }
+
+    // Neutral-bone remedy for unassigned vertices. USD/glTF skinning still carries
+    // weights for every vertex, but source meshes routinely leave some vertices
+    // fully unweighted (all four influences zero -- see the "bind to bone 0 with
+    // zero weight" path in MeshConverter::BuildMesh). A zero total weight makes a
+    // GPU skin shader produce a zero matrix, collapsing those vertices onto the
+    // origin (the classic "spike to bone 0" artefact). Mirror glTF-Blender-IO
+    // issue #1151: add ONE identity bone at the skeleton root and bind every
+    // zero-weight vertex to it with weight 1, so it keeps its authored, undeformed
+    // position. The bone is appended only when such vertices actually exist, so
+    // fully-skinned avatars keep their original bone list untouched.
+    bool needs_neutral = false;
+    for (const SC::FMeshData& surf : n->skin_surfaces) {
+        const size_t vc = surf.Vertices.size();
+        for (size_t v = 0; v < vc; ++v) {
+            float wsum = 0.0f;
+            for (int k = 0; k < 4; ++k) {
+                wsum += surf.Weights[v * 4 + k];
+            }
+            if (wsum < 1e-4f) {
+                needs_neutral = true;
+                break;
+            }
+        }
+        if (needs_neutral) {
+            break;
+        }
+    }
+    if (needs_neutral) {
+        const float identity[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f,
+        };
+        const int32_t neutral = idtx_skeleton_get_bone_count(n->skeleton);
+        idtx_skeleton_add_bone(n->skeleton, "neutral_bone", -1, identity, identity);
+        for (SC::FMeshData& surf : n->skin_surfaces) {
+            const size_t vc = surf.Vertices.size();
+            for (size_t v = 0; v < vc; ++v) {
+                float wsum = 0.0f;
+                for (int k = 0; k < 4; ++k) {
+                    wsum += surf.Weights[v * 4 + k];
+                }
+                if (wsum < 1e-4f) {
+                    surf.Bones[v * 4 + 0] = neutral;
+                    surf.Weights[v * 4 + 0] = 1.0f;
+                    for (int k = 1; k < 4; ++k) {
+                        surf.Bones[v * 4 + k] = 0;
+                        surf.Weights[v * 4 + k] = 0.0f;
+                    }
+                }
+            }
         }
     }
     return n;  // skin_surfaces -> skinned_meshes at finalize
