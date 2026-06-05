@@ -380,8 +380,16 @@ class Host:
     def _rebuild_scene(self) -> None:
         """(Re)create scene nodes from current meshes + blend-shape weights.
         Caller holds the lock."""
-        for node in self._nodes:
-            node.remove()
+        # Loading a new USD REPLACES the scene. Drop the whole avatar subtree by
+        # its fixed root so a freshly loaded file never overlaps the previous
+        # avatar (which read as "scrambled" — two avatars' meshes interpenetrating).
+        # Removing the root group clears every child regardless of the prior
+        # avatar's name; the per-node handles are a fallback for older viser.
+        try:
+            self.server.scene.remove_by_name("/avatar")
+        except Exception:
+            for node in self._nodes:
+                node.remove()
         self._nodes.clear()
         bones = getattr(self, "_bones", [])
         bone_wxyzs = [b.wxyz for b in bones]
@@ -409,7 +417,7 @@ class Host:
                     w = self._weights.get(bn, 0.0)
                     if w != 0.0:
                         verts = verts + w * deltas
-            path = f"/{self.name}/{md.name}"
+            path = f"/avatar/{md.name}"
             if len(md.subsets) > 1:
                 # Multi-material mesh (UsdGeomSubset): one piece per material range.
                 for si, (fstart, fcount, scol, stex) in enumerate(md.subsets):
