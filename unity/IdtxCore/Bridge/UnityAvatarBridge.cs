@@ -296,6 +296,45 @@ namespace IdtxCore.Bridge
                     NativeMethods.idtx_material_set_base_color_texture(mh, texPath);
             }
 
+            // Toon shaders (lilToon / Silent's SCSS / MToon / UTS) are NOT PBR.
+            // Routing them through UsdPreviewSurface gives wrong speculars — a
+            // lilToon _Glossiness of 1 maps to roughness 0, which renders as a
+            // mirror in StandardMaterial3D. Detect them and author the MToon
+            // overlay instead: any mtoon_* setter flips the material to
+            // VSekaiMToonAPI on export, and the Godot host then builds an MToon
+            // ShaderMaterial. Read each parameter from whichever toon property
+            // name is present, with sensible fallbacks.
+            string shaderName = mat.shader != null ? mat.shader.name : "";
+            bool isToon = shaderName.Contains("lilToon")
+                || shaderName.Contains("Silent") || shaderName.Contains("SCSS")
+                || shaderName.Contains("MToon") || shaderName.Contains("UnlitWF")
+                || shaderName.Contains("Toon") || shaderName.Contains("Cel");
+            if (isToon)
+            {
+                Color baseCol = mat.HasProperty("_Color") ? mat.GetColor("_Color")
+                    : (mat.HasProperty("_BaseColor") ? mat.GetColor("_BaseColor") : Color.white);
+                // Shade (1st cel band) color. Fall back to a slightly darkened
+                // base so the avatar still reads as toon-shaded when no explicit
+                // shade colour exists.
+                Color shade = baseCol * 0.8f;
+                foreach (string pn in new[] { "_ShadeColor", "_1st_ShadeColor", "_ShadowColor", "_Shadow1stColor" })
+                {
+                    if (mat.HasProperty(pn)) { shade = mat.GetColor(pn); break; }
+                }
+                NativeMethods.idtx_material_set_mtoon_shade_color(mh, shade.r, shade.g, shade.b);
+
+                Color rim = Color.black;
+                if (mat.HasProperty("_RimColor")) { rim = mat.GetColor("_RimColor"); }
+                NativeMethods.idtx_material_set_mtoon_rim_color(mh, rim.r, rim.g, rim.b);
+
+                float outline = 0.0f;
+                foreach (string pn in new[] { "_OutlineWidth", "_outline_width", "_Outline_Width" })
+                {
+                    if (mat.HasProperty(pn)) { outline = mat.GetFloat(pn); break; }
+                }
+                NativeMethods.idtx_material_set_mtoon_outline_width(mh, outline);
+            }
+
             int idx = NativeMethods.idtx_avatar_add_material(avatar, mh);
             cache[mat] = idx;
             return idx;

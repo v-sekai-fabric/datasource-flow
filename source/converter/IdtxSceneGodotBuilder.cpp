@@ -14,6 +14,9 @@
 #include <godot_cpp/classes/sphere_mesh.hpp>
 #include <godot_cpp/classes/cylinder_mesh.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
+#include <godot_cpp/classes/shader.hpp>
+#include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/skin.hpp>
 #include <godot_cpp/classes/animation.hpp>
@@ -118,13 +121,63 @@ Ref<Texture2D> load_scene_texture(idtx_scene_t* scene, const char* key) {
     return Ref<Texture2D>();
 }
 
+// Build an MToon ShaderMaterial from the vendored Godot-MToon-Shader for a
+// material flagged MToon in-core (its origin was a toon shader — lilToon / SCSS /
+// MToon — mapped to v_sekai:mtoon on export). Toon materials are UNLIT cel
+// shading, so routing them through StandardMaterial3D's PBR gives wrong results
+// (a lilToon _Glossiness of 1 lands as roughness 0 -> mirror). Returns null if
+// the shader resource is missing so the caller can fall back to PBR.
+Ref<Material> build_mtoon_material(idtx_scene_t* scene, const idtx_material_t* m) {
+    static Ref<Shader> mtoon_shader;
+    if (mtoon_shader.is_null()) {
+        mtoon_shader = ResourceLoader::get_singleton()->load(
+            "res://addons/Godot-MToon-Shader/mtoon.gdshader");
+    }
+    if (mtoon_shader.is_null()) {
+        return Ref<Material>();  // addon absent -> caller uses the PBR path
+    }
+    Ref<ShaderMaterial> mat;
+    mat.instantiate();
+    mat->set_shader(mtoon_shader);
+    if (const char* mname = idtx_material_get_name(m); mname && mname[0] != '\0') {
+        mat->set_name(String(mname));
+    }
+    float rgba[4];
+    idtx_material_get_base_color(m, rgba);
+    mat->set_shader_parameter("_Color", Color(rgba[0], rgba[1], rgba[2], rgba[3]));
+    float shade[3];
+    idtx_material_get_mtoon_shade_color(m, shade);
+    mat->set_shader_parameter("_ShadeColor", Color(shade[0], shade[1], shade[2], 1.0f));
+    float rim[3];
+    idtx_material_get_mtoon_rim_color(m, rim);
+    mat->set_shader_parameter("_RimColor", Color(rim[0], rim[1], rim[2], 1.0f));
+    mat->set_shader_parameter("_OutlineWidth", idtx_material_get_mtoon_outline_width(m));
+    // Albedo doubles as the shade texture (MToon's default), so the cel band keeps
+    // the same art when no dedicated shade map exists.
+    if (Ref<Texture2D> tex = load_scene_texture(scene, idtx_material_get_base_color_texture(m)); tex.is_valid()) {
+        mat->set_shader_parameter("_MainTex", tex);
+        mat->set_shader_parameter("_ShadeTexture", tex);
+    }
+    if (Ref<Texture2D> ntex = load_scene_texture(scene, idtx_material_get_normal_texture(m)); ntex.is_valid()) {
+        mat->set_shader_parameter("_BumpMap", ntex);
+    }
+    return mat;
+}
+
 // Build the Godot material for a node — the single material path for the whole
-// builder. Prefers the node's bound idtx_material (UsdPreviewSurface base color /
-// metallic / roughness, converted in-core); when the node has none (primitives,
-// or a mesh with no bound material), falls back to its display color (constant
-// interp -> albedo, else vertex-color). Texture maps from the material's image
-// paths are a follow-up (needs usdz asset extraction).
-Ref<StandardMaterial3D> build_material_index(idtx_scene_t* scene, idtx_node_t* node, int32_t mi) {
+// builder. A material flagged MToon in-core becomes an MToon ShaderMaterial (the
+// toon look); otherwise it prefers the node's bound idtx_material (UsdPreviewSurface
+// base color / metallic / roughness, converted in-core); when the node has none
+// (primitives, or a mesh with no bound material), falls back to its display color
+// (constant interp -> albedo, else vertex-color).
+Ref<Material> build_material_index(idtx_scene_t* scene, idtx_node_t* node, int32_t mi) {
+    if (const idtx_material_t* mm = (mi >= 0) ? idtx_scene_get_material(scene, mi) : nullptr;
+        mm && idtx_material_is_mtoon(mm) != 0) {
+        if (Ref<Material> mtoon = build_mtoon_material(scene, mm); mtoon.is_valid()) {
+            return mtoon;
+        }
+        // else: fall through to the PBR path below.
+    }
     Ref<StandardMaterial3D> mat;
     mat.instantiate();
 
@@ -185,7 +238,7 @@ Ref<StandardMaterial3D> build_material_index(idtx_scene_t* scene, idtx_node_t* n
 }
 
 // Material for a node's own bound material (the single-material path).
-Ref<StandardMaterial3D> build_material(idtx_scene_t* scene, idtx_node_t* node) {
+Ref<Material> build_material(idtx_scene_t* scene, idtx_node_t* node) {
     return build_material_index(scene, node, idtx_node_get_material_index(node));
 }
 

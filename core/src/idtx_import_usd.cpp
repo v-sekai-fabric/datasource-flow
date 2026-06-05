@@ -142,13 +142,21 @@ idtx_material_t* read_material(pxr::UsdPrim const& prim)
         }
     }
 
-    // MToon overlay if VSekaiMToonAPI is applied on the material prim.
-    if (prim.HasAPI(pxr::TfToken("VSekaiMToonAPI"))) {
+    // MToon overlay: present when the VSekaiMToonAPI schema is applied, OR when a
+    // v_sekai:mtoon attribute simply carries an authored value. The raw-attribute
+    // path matters because a host whose process did not get the codeless schema
+    // registered (ApplyAPI silently no-ops then) still authors the attributes — so
+    // keying only on HasAPI would drop the toon look and fall back to mirror PBR.
+    pxr::UsdAttribute shadeAttr = prim.GetAttribute(pxr::TfToken("v_sekai:mtoon:shadeColor"));
+    const bool has_mtoon = prim.HasAPI(pxr::TfToken("VSekaiMToonAPI"))
+        || (shadeAttr && shadeAttr.HasAuthoredValue());
+    if (has_mtoon) {
         pxr::GfVec3f shade(0.5f, 0.5f, 0.5f);
         pxr::GfVec3f rim(0.0f, 0.0f, 0.0f);
         float outline = 0.0f;
-        if (auto a = prim.GetAttribute(pxr::TfToken("v_sekai:mtoon:shadeColor")))
-            a.Get(&shade);
+        if (shadeAttr) {
+            shadeAttr.Get(&shade);
+        }
         if (auto a = prim.GetAttribute(pxr::TfToken("v_sekai:mtoon:rimColor")))
             a.Get(&rim);
         if (auto a = prim.GetAttribute(pxr::TfToken("v_sekai:mtoon:outlineWidth")))
