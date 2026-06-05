@@ -97,3 +97,5 @@ idtx-build.log
 
 # Unity-deployed OpenUSD plugin tree (build artifact, see scons/idtxcore.py)
 unity/IdtxCore/Plugins/*/usd~/
+compile_commands.json
+__pycache__/

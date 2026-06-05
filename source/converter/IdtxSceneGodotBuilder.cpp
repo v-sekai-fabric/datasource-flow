@@ -192,7 +192,18 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     std::vector<int32_t> idx(ic);
     idtx_mesh_get_indices(mesh, idx.data());
     PackedInt32Array tris; tris.resize(ic);
-    for (int32_t i = 0; i < ic; ++i) tris[i] = idx[i];
+    // Reverse each triangle's winding for Godot. The core keeps the canonical
+    // USD/glTF CCW-front winding (correct for USD round-trips and three.js/viser),
+    // but Godot's PRIMITIVE_TRIANGLES treats CLOCKWISE as front-facing under
+    // CULL_BACK (verified: SurfaceTool.generate_normals() yields -Z for a CCW
+    // triangle). Feeding the CCW winding unchanged culls the outward-normal face
+    // and renders every mesh inside-out. Swap the 2nd/3rd index per triangle so
+    // the front face Godot keeps is the one whose authored normal points outward.
+    for (int32_t t = 0; t + 2 < ic; t += 3) {
+        tris[t]     = idx[t];
+        tris[t + 1] = idx[t + 2];
+        tris[t + 2] = idx[t + 1];
+    }
 
     Array arrays; arrays.resize(Mesh::ARRAY_MAX);
     arrays[Mesh::ARRAY_VERTEX] = verts;
