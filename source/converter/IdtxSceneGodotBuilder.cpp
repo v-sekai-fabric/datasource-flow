@@ -82,17 +82,31 @@ Ref<Texture2D> load_scene_texture(idtx_scene_t* scene, const char* key) {
         idtx_texture_get_bytes(t, buf.ptrw());
         Ref<Image> img;
         img.instantiate();
-        const String lower = String(key).to_lower();
+        // Choose the decoder by SNIFFING the magic bytes, not the key's
+        // extension. usdz-resolved keys look like "foo.usdz[0/bar.png]" (they end
+        // in ']'), so an extension test mis-routes every packaged texture to the
+        // JPEG path: load_jpg_from_buffer then fails on the PNG bytes and spams
+        // "libjpeg ... ERR_PARSE_ERROR" before the fallback succeeds. The byte
+        // signature is unambiguous and silences that noise.
         Error e = ERR_UNAVAILABLE;
-        if (lower.ends_with(".png")) {
+        const uint8_t* p = buf.ptr();
+        const int32_t len = buf.size();
+        const bool is_png  = len >= 8 && p[0] == 0x89 && p[1] == 0x50 && p[2] == 0x4E && p[3] == 0x47;
+        const bool is_jpeg = len >= 3 && p[0] == 0xFF && p[1] == 0xD8 && p[2] == 0xFF;
+        const bool is_webp = len >= 12 && p[0] == 'R' && p[1] == 'I' && p[2] == 'F' && p[3] == 'F'
+                                       && p[8] == 'W' && p[9] == 'E' && p[10] == 'B' && p[11] == 'P';
+        if (is_png) {
             e = img->load_png_from_buffer(buf);
-        } else if (lower.ends_with(".webp")) {
+        } else if (is_jpeg) {
+            e = img->load_jpg_from_buffer(buf);
+        } else if (is_webp) {
             e = img->load_webp_from_buffer(buf);
-        } else if (lower.ends_with(".jpg") || lower.ends_with(".jpeg")) {
-            e = img->load_jpg_from_buffer(buf);
         } else {
-            e = img->load_jpg_from_buffer(buf);
-            if (e != OK) {
+            // Unknown signature: fall back to the key's extension, PNG first.
+            const String lower = String(key).to_lower();
+            if (lower.ends_with(".jpg") || lower.ends_with(".jpeg")) {
+                e = img->load_jpg_from_buffer(buf);
+            } else {
                 e = img->load_png_from_buffer(buf);
             }
         }
