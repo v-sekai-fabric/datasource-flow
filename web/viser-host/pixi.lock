@@ -59,12 +59,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.11-8_cp311.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/trimesh-4.12.2-pyh7b2049a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
+      - pypi: git+https://github.com/v-sekai-multiplayer-fabric/viser?rev=9c89783a5a63dca7d6ae1239580d491179830fa9#9c89783a5a63dca7d6ae1239580d491179830fa9
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/22/7b/1d679f4fced4ea94efadd17103856d8c565384f68382a1681264e46f5925/playwright-1.60.0-py3-none-manylinux1_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/49/fa/391e437a34e55095173dca5f24070d89cbc233ff85bf1c29c93248c6588d/imageio-2.37.3-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/4a/c9/9a4ca25b505303d5557c98786ac0bf7081c76a7262e1b6c87b899bccc7b8/viser-1.0.30-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/59/8c/57e832b7af6d7c5abe66eb3fbe3a3a32f4d11ea23a1aa7131371035be991/certifi-2026.5.20-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/75/de/af6cef182862d2ccd6975440d21c9058a77c3f9b469abf94e322dfd2e0e3/greenlet-3.5.1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl
@@ -122,12 +122,12 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/xorg-libxdmcp-1.1.5-hc919400_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-hed4e4f5_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
+      - pypi: git+https://github.com/v-sekai-multiplayer-fabric/viser?rev=9c89783a5a63dca7d6ae1239580d491179830fa9#9c89783a5a63dca7d6ae1239580d491179830fa9
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/42/3c/ff890b466eaba2b0f5e6bdfff025f8c75f41b8ffdc3dbc3d24ad261e764a/greenlet-3.5.1-cp311-cp311-macosx_11_0_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/49/fa/391e437a34e55095173dca5f24070d89cbc233ff85bf1c29c93248c6588d/imageio-2.37.3-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/4a/c9/9a4ca25b505303d5557c98786ac0bf7081c76a7262e1b6c87b899bccc7b8/viser-1.0.30-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/58/5d/88ea17ed1ded2079358b40d31d48abe90a73c9e5819dbcde1606e991e2ad/websockets-16.0-cp311-cp311-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/59/7b/e1d32ae8a3ed937ec2be3721c5f728b13d731a0b7c6442e0b3bec5094ac0/playwright-1.60.0-py3-none-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/59/8c/57e832b7af6d7c5abe66eb3fbe3a3a32f4d11ea23a1aa7131371035be991/certifi-2026.5.20-py3-none-any.whl
@@ -192,6 +192,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/xorg-libxdmcp-1.1.5-hba3369d_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-ng-2.3.3-h0261ad2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
+      - pypi: git+https://github.com/v-sekai-multiplayer-fabric/viser?rev=9c89783a5a63dca7d6ae1239580d491179830fa9#9c89783a5a63dca7d6ae1239580d491179830fa9
       - pypi: https://files.pythonhosted.org/packages/09/af/8bf15736a6dd3cb4f90c5467f6dc39197d2daaf10754490cdc0aa17b7312/msgspec-0.21.1-cp311-cp311-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl
@@ -199,7 +200,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/20/d9/5f67790f06b735d7c7637171bbfd89882ad67201891b7275e51116ed8207/charset_normalizer-3.4.7-cp311-cp311-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/43/a3/c6155f5c1cce691cb80dfd38627046e50af3ee9ddc5d0b45b9b063bfb8c9/zstandard-0.25.0-cp311-cp311-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/49/fa/391e437a34e55095173dca5f24070d89cbc233ff85bf1c29c93248c6588d/imageio-2.37.3-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/4a/c9/9a4ca25b505303d5557c98786ac0bf7081c76a7262e1b6c87b899bccc7b8/viser-1.0.30-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/54/67/eaff76b3dbaf18dcddabc3b8c1dba50b483761cccff67793897945b37408/websockets-16.0-cp311-cp311-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/55/f0/0541524133104f9cc20bf900870ff4a736b76a23483f3a55295ddfa58409/playwright-1.60.0-py3-none-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/59/8c/57e832b7af6d7c5abe66eb3fbe3a3a32f4d11ea23a1aa7131371035be991/certifi-2026.5.20-py3-none-any.whl
@@ -1985,6 +1985,56 @@ packages:
   purls: []
   size: 388453
   timestamp: 1764777142545
+- pypi: git+https://github.com/v-sekai-multiplayer-fabric/viser?rev=9c89783a5a63dca7d6ae1239580d491179830fa9#9c89783a5a63dca7d6ae1239580d491179830fa9
+  name: viser
+  version: 1.0.30+idtx1
+  requires_dist:
+  - imageio>=2.0.0,<3.0.0
+  - msgspec>=0.18.6,<1.0.0
+  - numpy>=1.0.0,<3.0.0
+  - requests>=2.0.0,<3.0.0
+  - rich>=13.3.3,<15.0.0
+  - tqdm>=4.0.0,<5.0.0
+  - trimesh>=3.21.7,<5.0.0
+  - typing-extensions>=4.0.0
+  - websockets>=13.1,<17.0.0
+  - zstandard>=0.20.0,<1.0.0
+  - gdown>=4.6.6 ; extra == 'dev'
+  - hypothesis[numpy] ; extra == 'dev'
+  - matplotlib>=3.7.1 ; extra == 'dev'
+  - nodeenv>=1.9.1,<2.0.0 ; extra == 'dev'
+  - opencv-python ; extra == 'dev'
+  - pandas ; extra == 'dev'
+  - playwright>=1.40.0 ; extra == 'dev'
+  - plotly>=5.21.0 ; extra == 'dev'
+  - plyfile ; extra == 'dev'
+  - pre-commit==3.3.2 ; extra == 'dev'
+  - psutil>=5.9.5,<8.0.0 ; extra == 'dev'
+  - pyliblzfse>=0.4.1 ; sys_platform != 'win32' and extra == 'dev'
+  - pyright>=1.1.308 ; extra == 'dev'
+  - pytest ; extra == 'dev'
+  - pytest-playwright>=0.4.0 ; extra == 'dev'
+  - pytest-xdist>=3.0.0 ; extra == 'dev'
+  - robot-descriptions>=1.18.0 ; extra == 'dev'
+  - ruff>=0.9.3 ; extra == 'dev'
+  - torch<2.5.0 ; python_full_version < '3.9' and extra == 'dev'
+  - torch>=1.13.1 ; extra == 'dev'
+  - tyro>=1.0.0 ; extra == 'dev'
+  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'dev'
+  - gdown>=4.6.6 ; extra == 'examples'
+  - matplotlib>=3.7.1 ; extra == 'examples'
+  - opencv-python ; extra == 'examples'
+  - pandas ; extra == 'examples'
+  - plotly>=5.21.0 ; extra == 'examples'
+  - plyfile ; extra == 'examples'
+  - pyliblzfse>=0.4.1 ; sys_platform != 'win32' and extra == 'examples'
+  - robot-descriptions>=1.18.0 ; extra == 'examples'
+  - torch<2.5.0 ; python_full_version < '3.9' and extra == 'examples'
+  - torch>=1.13.1 ; extra == 'examples'
+  - tyro>=1.0.0 ; extra == 'examples'
+  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'examples'
+  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'urdf'
+  requires_python: '>=3.8'
 - pypi: https://files.pythonhosted.org/packages/09/af/8bf15736a6dd3cb4f90c5467f6dc39197d2daaf10754490cdc0aa17b7312/msgspec-0.21.1-cp311-cp311-win_amd64.whl
   name: msgspec
   version: 0.21.1
@@ -2119,57 +2169,6 @@ packages:
   - sphinx<6 ; extra == 'full'
   - tifffile ; extra == 'full'
   requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/4a/c9/9a4ca25b505303d5557c98786ac0bf7081c76a7262e1b6c87b899bccc7b8/viser-1.0.30-py3-none-any.whl
-  name: viser
-  version: 1.0.30
-  sha256: 43089f50acdd45c19b23101c9a2cf8edcc52d052bf7f53ed0b2b6a932c71b5d1
-  requires_dist:
-  - imageio>=2.0.0,<3.0.0
-  - msgspec>=0.18.6,<1.0.0
-  - numpy>=1.0.0,<3.0.0
-  - requests>=2.0.0,<3.0.0
-  - rich>=13.3.3,<15.0.0
-  - tqdm>=4.0.0,<5.0.0
-  - trimesh>=3.21.7,<5.0.0
-  - typing-extensions>=4.0.0
-  - websockets>=13.1,<17.0.0
-  - zstandard>=0.20.0,<1.0.0
-  - gdown>=4.6.6 ; extra == 'dev'
-  - hypothesis[numpy] ; extra == 'dev'
-  - matplotlib>=3.7.1 ; extra == 'dev'
-  - nodeenv>=1.9.1,<2.0.0 ; extra == 'dev'
-  - opencv-python ; extra == 'dev'
-  - pandas ; extra == 'dev'
-  - playwright>=1.40.0 ; extra == 'dev'
-  - plotly>=5.21.0 ; extra == 'dev'
-  - plyfile ; extra == 'dev'
-  - pre-commit==3.3.2 ; extra == 'dev'
-  - psutil>=5.9.5,<8.0.0 ; extra == 'dev'
-  - pyliblzfse>=0.4.1 ; sys_platform != 'win32' and extra == 'dev'
-  - pyright>=1.1.308 ; extra == 'dev'
-  - pytest ; extra == 'dev'
-  - pytest-playwright>=0.4.0 ; extra == 'dev'
-  - pytest-xdist>=3.0.0 ; extra == 'dev'
-  - robot-descriptions>=1.18.0 ; extra == 'dev'
-  - ruff>=0.9.3 ; extra == 'dev'
-  - torch<2.5.0 ; python_full_version < '3.9' and extra == 'dev'
-  - torch>=1.13.1 ; extra == 'dev'
-  - tyro>=1.0.0 ; extra == 'dev'
-  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'dev'
-  - gdown>=4.6.6 ; extra == 'examples'
-  - matplotlib>=3.7.1 ; extra == 'examples'
-  - opencv-python ; extra == 'examples'
-  - pandas ; extra == 'examples'
-  - plotly>=5.21.0 ; extra == 'examples'
-  - plyfile ; extra == 'examples'
-  - pyliblzfse>=0.4.1 ; sys_platform != 'win32' and extra == 'examples'
-  - robot-descriptions>=1.18.0 ; extra == 'examples'
-  - torch<2.5.0 ; python_full_version < '3.9' and extra == 'examples'
-  - torch>=1.13.1 ; extra == 'examples'
-  - tyro>=1.0.0 ; extra == 'examples'
-  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'examples'
-  - yourdfpy>=0.0.53,<1.0.0 ; extra == 'urdf'
-  requires_python: '>=3.8'
 - pypi: https://files.pythonhosted.org/packages/54/67/eaff76b3dbaf18dcddabc3b8c1dba50b483761cccff67793897945b37408/websockets-16.0-cp311-cp311-win_amd64.whl
   name: websockets
   version: '16.0'

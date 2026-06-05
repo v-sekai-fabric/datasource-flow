@@ -19,7 +19,11 @@ trimesh = ">=4.0"
 pillow = ">=10.0"
 
 [pypi-dependencies]
-viser = "*"
+# Our fork of viser: add_mesh_skinned carries an optional albedo texture + UVs,
+# so textured avatars stay textured AND animate (textured GPU skinning). Pinned
+# to the -dist branch's exact commit, which also ships the prebuilt client
+# bundle so installs need no npm build. Bump rev to advance.
+viser = { git = "https://github.com/v-sekai-multiplayer-fabric/viser.git", rev = "9c89783a5a63dca7d6ae1239580d491179830fa9" }
 playwright = "*"
 
 [tasks]
