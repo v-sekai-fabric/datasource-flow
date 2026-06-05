@@ -117,9 +117,12 @@ UsdTypeConverter<FT>::toMaterial(const types::MaterialDescription<std::string>&,
     return std::nullopt;
 }
 
-// UV V-flip — engine-specific. Mirror the Godot convention (negate V).
+// UV V-flip: USD's texture origin is bottom-left, glTF / Godot / three.js use
+// top-left, so V maps as 1 - v. (The old `-v` only looked right under repeat
+// wrap, where -v == 1 - v mod 1; it scrambled clamp-sampled hosts like the
+// three.js/viser GLB path and left V outside [0,1].)
 template <> inline S::FVec2
-UsdMeshConverter<FT>::FlipUvV(const S::FVec2& input) { return {input.x, -input.y}; }
+UsdMeshConverter<FT>::FlipUvV(const S::FVec2& input) { return {input.x, 1.0f - input.y}; }
 
 // Mirror of TargetMeshBuilder<Godot>: push position/normal/uv; pad bones to 4
 // and normalize weights; indices into Triangles (winding already corrected in

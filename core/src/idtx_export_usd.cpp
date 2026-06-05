@@ -225,7 +225,10 @@ static pxr::SdfPath emit_mesh(
         pxr::VtArray<pxr::GfVec2f> uvs;
         uvs.reserve(vc);
         for (int32_t i = 0; i < vc; ++i) {
-            uvs.push_back(pxr::GfVec2f(uv_buf[i * 2 + 0], uv_buf[i * 2 + 1]));
+            // Engine UVs are top-left origin (V down); USD is bottom-left (V up).
+            // Mirror the import flip (1 - v) so a USD->engine->USD round-trip is
+            // identity instead of negating V each pass.
+            uvs.push_back(pxr::GfVec2f(uv_buf[i * 2 + 0], 1.0f - uv_buf[i * 2 + 1]));
         }
         pxr::UsdGeomPrimvarsAPI pvapi(usd_mesh.GetPrim());
         auto st = pvapi.CreatePrimvar(
