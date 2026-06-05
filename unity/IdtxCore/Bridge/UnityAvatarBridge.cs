@@ -511,7 +511,13 @@ namespace IdtxCore.Bridge
             for (int i = 0; i < vs.Length; ++i)
             {
                 o[i * 2 + 0] = vs[i].x;
-                o[i * 2 + 1] = vs[i].y;
+                // Unity's UV origin is bottom-left; the idtx core's internal
+                // convention is top-left (glTF) — the USD writer flips V to
+                // bottom-left on export, and the Godot/three hosts read idtx UVs
+                // raw as top-left. So convert Unity bottom-left -> idtx top-left
+                // here (V -> 1 - V); without it the exported texture is flipped
+                // vertically. Mirrored by MeshFromHandle on import.
+                o[i * 2 + 1] = 1.0f - vs[i].y;
             }
             return o;
         }
@@ -693,8 +699,10 @@ namespace IdtxCore.Bridge
                 var u = new float[vc * 2];
                 NativeMethods.idtx_mesh_get_uvs(mh, u);
                 var us = new Vector2[vc];
+                // idtx top-left -> Unity bottom-left (V -> 1 - V); inverse of the
+                // flip MeshToFloat2Array applies on export.
                 for (int i = 0; i < vc; ++i)
-                    us[i] = new Vector2(u[i * 2], u[i * 2 + 1]);
+                    us[i] = new Vector2(u[i * 2], 1.0f - u[i * 2 + 1]);
                 mesh.uv = us;
             }
             if (NativeMethods.idtx_mesh_has_colors(mh) != 0)
