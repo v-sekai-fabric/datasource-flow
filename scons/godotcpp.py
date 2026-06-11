@@ -32,4 +32,15 @@ def _build_godot_cpp(env):
     env["use_rtti"] = "yes"
     env["use_threads"] = "yes"
 
+    # godot-cpp's bundled gdextension/extension_api.json comes from a
+    # single-precision engine and its binding generator refuses a
+    # precision=double build against it. For double builds, generate
+    # bindings from the API dump of the actual target engine (the
+    # v-sekai-multiplayer-fabric godot fork, 4.7-beta double):
+    #   godot.windows.editor.double.x86_64 --headless --dump-extension-api
+    if env.get("precision", "single") == "double":
+        env["custom_api_file"] = os.path.abspath(
+            "flow/adapters/godot/api/extension_api.double.json"
+        )
+
     return env.SConscript(f"{godot_cpp_path}/SConstruct", exports=['env'])
