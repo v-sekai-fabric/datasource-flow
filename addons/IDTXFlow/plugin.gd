@@ -21,8 +21,11 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	if _popup != null:
+		# remove_tool_menu_item frees the submenu it owns; only free the
+		# popup ourselves if it somehow survived removal.
 		remove_tool_menu_item(_MENU_LABEL)
-		_popup.queue_free()
+		if is_instance_valid(_popup):
+			_popup.queue_free()
 		_popup = null
 
 func _get_plugin_name() -> String:
