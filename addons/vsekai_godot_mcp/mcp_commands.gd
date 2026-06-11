@@ -33,6 +33,8 @@ func dispatch(cmd: String, a: Dictionary):
 		# --- editor-only (require EditorInterface) ---
 		"open_scene": return _need_editor() if editor == null else _ok(editor.open_scene_from_path(String(a.get("path", ""))))
 		"save_scene": return _need_editor() if editor == null else _ok(editor.save_scene())
+		"reimport_asset": return _cmd_reimport(a)
+		"rescan_filesystem": return _cmd_rescan(a)
 		"get_open_scene":
 			if editor == null: return _need_editor()
 			var r = editor.get_edited_scene_root()
@@ -87,6 +89,10 @@ func dispatch(cmd: String, a: Dictionary):
 		"get_nodes_in_group": return _cmd_get_nodes_in_group(a)
 		"find_nodes": return _cmd_find_nodes(a)
 		"get_node_count": return { "count": _count_descendants(root) }
+		# --- spatial: transforms / bounds / skeleton (geometry diagnosis) ---
+		"get_transform": return _cmd_get_transform(a)
+		"get_aabb": return _cmd_get_aabb(a)
+		"get_bone_poses": return _cmd_get_bone_poses(a)
 		# --- scripting / reflection (ClassDB + signals + singletons) ---
 		"class_exists": return { "exists": ClassDB.class_exists(String(a.get("class",""))) }
 		"get_class_methods": return _cmd_class_members(a, true)
@@ -586,6 +592,99 @@ func _cmd_screenshot(a: Dictionary):
 	return { "path": ProjectSettings.globalize_path(path), "width": img.get_width(), "height": img.get_height() }
 
 
+# --- spatial: transforms / bounds / skeleton --------------------------------
+
+func _cmd_get_transform(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	if not (n is Node3D):
+		return _err("node is not a Node3D: " + n.get_class())
+	var n3 := n as Node3D
+	return {
+		"local": _to_json(n3.transform),
+		"global": _to_json(n3.global_transform),
+		"global_position": _to_json(n3.global_position),
+		"global_rotation_deg": _to_json(n3.global_rotation_degrees),
+		"scale": _to_json(n3.scale),
+	}
+
+func _cmd_get_aabb(a: Dictionary):
+	var n := _resolve(String(a.get("path", ".")))
+	if n == null:
+		return _err("node not found")
+	# Merge the world-space AABB of every VisualInstance3D in the subtree.
+	var result := AABB()
+	var have := false
+	var stack: Array = [n]
+	while not stack.is_empty():
+		var node = stack.pop_back()
+		if node is VisualInstance3D:
+			var wa: AABB = node.global_transform * (node as VisualInstance3D).get_aabb()
+			if not have:
+				result = wa
+				have = true
+			else:
+				result = result.merge(wa)
+		for c in node.get_children():
+			stack.append(c)
+	if not have:
+		return _err("no VisualInstance3D under: " + String(a.get("path", ".")))
+	return {
+		"min": _to_json(result.position),
+		"max": _to_json(result.end),
+		"size": _to_json(result.size),
+		"center": _to_json(result.get_center()),
+	}
+
+func _cmd_get_bone_poses(a: Dictionary):
+	var n := _resolve(String(a.get("path", "")))
+	if n == null:
+		return _err("node not found")
+	if not (n is Skeleton3D):
+		return _err("node is not a Skeleton3D: " + n.get_class())
+	var sk := n as Skeleton3D
+	var only = a.get("bones", null)   # optional: array of bone names to filter
+	var bones := []
+	for i in range(sk.get_bone_count()):
+		var bname := sk.get_bone_name(i)
+		if only is Array and only.size() > 0 and not (bname in only):
+			continue
+		bones.append({
+			"index": i,
+			"name": bname,
+			"parent": sk.get_bone_parent(i),
+			"rest": _to_json(sk.get_bone_rest(i)),
+			"pose_local": _to_json(sk.get_bone_pose(i)),
+			"global_pose": _to_json(sk.get_bone_global_pose(i)),
+		})
+	return { "skeleton": String(sk.name), "bone_count": sk.get_bone_count(), "bones": bones }
+
+
+# --- asset reimport (parity with Unity-MCP assets-refresh) ------------------
+
+func _cmd_reimport(a: Dictionary):
+	if editor == null:
+		return _need_editor()
+	var paths := PackedStringArray()
+	var raw = a.get("paths", [])
+	if raw is Array:
+		for p in raw:
+			paths.append(String(p))
+	if a.has("path") and String(a["path"]) != "":
+		paths.append(String(a["path"]))
+	if paths.is_empty():
+		return _err("no paths given (use 'path' or 'paths')")
+	editor.get_resource_filesystem().reimport_files(paths)
+	return { "reimported": Array(paths) }
+
+func _cmd_rescan(_a: Dictionary):
+	if editor == null:
+		return _need_editor()
+	editor.get_resource_filesystem().scan()
+	return { "ok": true }
+
+
 # --- scan + JSON (de)serialization + coercion -------------------------------
 
 func _scan_ext(dir_path: String, ext: String, out: PackedStringArray = PackedStringArray()) -> PackedStringArray:
@@ -618,6 +717,12 @@ func _to_json(v, depth: int = 0):
 		TYPE_VECTOR4: return { "__t__": "Vector4", "x": v.x, "y": v.y, "z": v.z, "w": v.w }
 		TYPE_COLOR: return { "__t__": "Color", "r": v.r, "g": v.g, "b": v.b, "a": v.a }
 		TYPE_QUATERNION: return { "__t__": "Quaternion", "x": v.x, "y": v.y, "z": v.z, "w": v.w }
+		TYPE_VECTOR2I: return { "__t__": "Vector2i", "x": v.x, "y": v.y }
+		TYPE_VECTOR3I: return { "__t__": "Vector3i", "x": v.x, "y": v.y, "z": v.z }
+		# Matrix / bounds types: Godot-native, lossless Variant<->JSON via
+		# JSON.from_native (Godot 4.3+), reversed in _coerce by JSON.to_native —
+		# no hand-rolled layout to drift. Emits {"type":..., "args":[...]}.
+		TYPE_BASIS, TYPE_TRANSFORM2D, TYPE_TRANSFORM3D, TYPE_AABB, TYPE_PLANE, TYPE_RECT2, TYPE_PROJECTION: return JSON.from_native(v)
 		TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, \
 		TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, TYPE_PACKED_STRING_ARRAY, \
 		TYPE_PACKED_VECTOR2_ARRAY, TYPE_PACKED_VECTOR3_ARRAY, TYPE_PACKED_COLOR_ARRAY:
@@ -649,6 +754,12 @@ func _coerce(v, target_type: int):
 			"Vector4": return Vector4(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 0))
 			"Color": return Color(v.get("r", 0), v.get("g", 0), v.get("b", 0), v.get("a", 1))
 			"Quaternion": return Quaternion(v.get("x", 0), v.get("y", 0), v.get("z", 0), v.get("w", 1))
+			"Vector2i": return Vector2i(int(v.get("x", 0)), int(v.get("y", 0)))
+			"Vector3i": return Vector3i(int(v.get("x", 0)), int(v.get("y", 0)), int(v.get("z", 0)))
+	# Godot-native JSON payloads (Transform3D / Basis / AABB / Plane / …) emitted
+	# by _to_json via JSON.from_native — rebuild the engine Variant losslessly.
+	if typeof(v) == TYPE_DICTIONARY and v.has("type") and v.has("args"):
+		return JSON.to_native(v)
 	if typeof(v) == TYPE_ARRAY:
 		if target_type == TYPE_VECTOR3 and v.size() == 3: return Vector3(v[0], v[1], v[2])
 		if target_type == TYPE_VECTOR2 and v.size() == 2: return Vector2(v[0], v[1])

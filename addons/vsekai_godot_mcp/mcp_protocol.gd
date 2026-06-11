@@ -143,6 +143,8 @@ func _tool_defs() -> Array:
 		["create_scene", "Create + save a new .tscn with a typed root.", { "path": "string", "root_type": "string", "root_name": "string" }],
 		["instance_scene", "Instance a PackedScene under a parent.", { "scene": "string", "parent": "string" }],
 		["save_branch_as_scene", "Pack a node subtree and save it as a .tscn.", { "path": "string", "scene": "string" }],
+		["reimport_asset", "Reimport one or more assets after their source changed on disk (EditorFileSystem.reimport_files) — the analogue of Unity-MCP's asset refresh. Pass a single 'path' or a 'paths' array of res:// paths.", { "path": "string", "paths": "array" }],
+		["rescan_filesystem", "Rescan the project filesystem for added/removed/changed files (EditorFileSystem.scan).", {}],
 		["get_project_setting", "Read a ProjectSettings value.", { "setting": "string" }],
 		["set_project_setting", "Set a ProjectSettings value.", { "setting": "string", "value": "any" }],
 		# scene / hierarchy
@@ -153,6 +155,10 @@ func _tool_defs() -> Array:
 		["get_nodes_in_group", "Paths of nodes in a group.", { "group": "string" }],
 		["find_nodes", "Find nodes by name pattern and/or type.", { "name": "string", "type": "string" }],
 		["get_node_count", "Count nodes under the scene root.", {}],
+		# spatial: transforms / bounds / skeleton (geometry diagnosis)
+		["get_transform", "Get a Node3D's local and global Transform3D plus world position, rotation (degrees) and scale. Transforms come back as Godot-native JSON (JSON.from_native).", { "path": "string" }],
+		["get_aabb", "World-space bounding box (min/max/size/center) merged over every VisualInstance3D in a node's subtree (default: whole scene). Use it to frame a camera or spot a mesh that is offset/splayed out of place.", { "path": "string" }],
+		["get_bone_poses", "Dump a Skeleton3D's bones — name, parent index, rest, local pose and global pose transforms (Godot-native JSON). Use to diagnose skeletal offsets, e.g. a shoulder/clavicle bone whose bind or rest transform is wrong. Optional 'bones' filters to specific bone names.", { "path": "string", "bones": "array" }],
 		# reflection: ClassDB / signals / singletons
 		["class_exists", "Whether a Godot class exists.", { "class": "string" }],
 		["get_class_methods", "Methods of a class (ClassDB).", { "class": "string", "no_inheritance": "boolean" }],
@@ -174,8 +180,8 @@ func _tool_names() -> PackedStringArray:
 # against it) — JSON-LD is not accepted here, so JSON Schema is the only correct
 # choice for the tool surface. (A JSON-LD @context could annotate the avatar/USD
 # *domain* separately, but not the MCP inputSchema.)
-const _OPTIONAL_PARAMS := ["max_depth", "name", "args", "monitors", "default", "no_inheritance", "lines"]
-const _ALL_OPTIONAL_TOOLS := ["play_scene", "screenshot", "get_performance", "find_nodes", "read_log"]
+const _OPTIONAL_PARAMS := ["max_depth", "name", "args", "monitors", "default", "no_inheritance", "lines", "bones", "paths"]
+const _ALL_OPTIONAL_TOOLS := ["play_scene", "screenshot", "get_performance", "find_nodes", "read_log", "get_aabb", "reimport_asset"]
 
 func _tool_schemas() -> Array:
 	var out := []
