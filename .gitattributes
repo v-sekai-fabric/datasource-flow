@@ -1,0 +1,18 @@
+# Normalize EOL for all files that Git considers text files
+* text=auto eol=lf
+*.fbx !text !filter !merge !diff
+*.3ds !text !filter !merge !diff
+*.psd !text !filter !merge !diff
+*.png !text !filter !merge !diff
+*.mp3 !text !filter !merge !diff
+*.wav !text !filter !merge !diff
+*.xcf !text !filter !merge !diff
+*.jpg !text !filter !merge !diff
+*.so !text !filter !merge !diff
+*.dylib !text !filter !merge !diff
+*.dll !text !filter !merge !diff
+*.lib !text !filter !merge !diff
+*.a !text !filter !merge !diff
+*.usd !text !filter !merge !diff
+*.usdc !text !filter !merge !diff
+*.usdz !text !filter !merge !diff
