@@ -6,6 +6,9 @@
 /thirdparty/*
 !/thirdparty/generate_stubs
 !/thirdparty/godot-cpp
+# keep the marker that stops the Godot editor from scanning/importing
+# the (huge) downloaded dependency trees
+!/thirdparty/.gdignore
 # godot-cpp build outputs inside the subtree
 /thirdparty/godot-cpp/bin/
 /thirdparty/godot-cpp/gen/
