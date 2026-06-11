@@ -87,12 +87,17 @@ def _do_compose_sdk(target, source, env):
     shutil.copytree(f"{open_usd_path}/include/tbb", f"{sdk_includes}/tbb", dirs_exist_ok=True)
     shutil.copytree(f"{open_usd_path}/include/oneapi", f"{sdk_includes}/oneapi", dirs_exist_ok=True)
 
-    shutil.copytree(f"./shared/include/idtxflow", f"{sdk_includes}/idtxflow", dirs_exist_ok=True)
-    shutil.copytree(f"./shared/include/idtxflow_godot", f"{sdk_includes}/idtxflow_godot", dirs_exist_ok=True)
-    
+    # idtx schema headers (libidtx_usd) — StageConverter.h includes
+    # "idtx/interactionAPI.h"/"idtx/collisionAPI.h", so SDK consumers
+    # need them on the same include root.
+    shutil.copytree(f"./flow/core/usd/include/idtx", f"{sdk_includes}/idtx", dirs_exist_ok=True)
+
+    shutil.copytree(f"./flow/core/include/idtxflow", f"{sdk_includes}/idtxflow", dirs_exist_ok=True)
+    shutil.copytree(f"./flow/adapters/godot/include/idtxflow_godot", f"{sdk_includes}/idtxflow_godot", dirs_exist_ok=True)
+
     os.makedirs(f"{sdk_includes}/idtxflow_ext", exist_ok=True)
     shutil.copy(
-        "./shared/include/idtxflow_ext/ExtensionBootstrap.h",
+        "./flow/adapters/godot/include/idtxflow_ext/ExtensionBootstrap.h",
         f"{sdk_includes}/idtxflow_ext/ExtensionBootstrap.h",
     )
 

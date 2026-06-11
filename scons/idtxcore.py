@@ -5,7 +5,7 @@ Builds libidtx_core in TWO configurations from one source tree:
 
 1. **Shared library** (`libidtx_core.<platform>.<arch>.{dll,so,dylib}`)
    — consumed by the GDExtension (addons/IDTXFlow/), the standalone CLI
-   (tools/idtxcli/), and any future P/Invoke host. Symbols are
+   (flow/adapters/cli/), and any future P/Invoke host. Symbols are
    `__declspec(dllexport)` on Windows, default ELF visibility elsewhere.
 
 2. **Static archive** (`libidtx_core_static.<platform>.<arch>.{lib,a}`)
@@ -102,31 +102,31 @@ def _common_env(env, *, building_dll, static):
     build_target = env["target"]
     openusd_version = env.get('openusd_version', '')
     usd_root = f"thirdparty/openusd-{openusd_version}"
-    usd_extension_path = "usd"
+    usd_extension_path = "flow/core/usd"
 
     cfg_env = env.Clone()
 
     cfg_env.Append(CPPPATH=[
-        "core/include",
-        # idtx_scene converter: the engine-agnostic converter framework lives in
-        # shared/include (angle includes <idtxflow/...>), the FlatTree target in
-        # core/src ("scene/..."), and "core" lets StageConverter's relative
-        # `../usd/include/idtx/*` schema include resolve (core/../usd/include).
-        "core/src",
-        "core",
-        "shared/include",
+        # Hexagonal layout (flow/ cluster): the public C ABI port headers
+        # live under flow/ports/include ("idtx_core/*.h"); the private
+        # implementation headers (idtx_core/internal/*) and the
+        # OpenUSD-dependent converter framework (<idtxflow/...>) under
+        # flow/core/include; the FlatTree target in flow/core/src ("scene/...").
+        "flow/ports/include",
+        "flow/core/include",
+        "flow/core/src",
         f"{usd_root}/include",
         f"{usd_extension_path}/include",
-        "libs/cgltf",
-        "libs/jsmn",
+        "flow/core/libs/cgltf",
+        "flow/core/libs/jsmn",
         # ixwebsocket headers for idtx_transport.cpp. The library
         # itself is linked via the existing BuildIXWebSocket() artifact
         # produced upstream in SConstruct.
         "thirdparty/ixwebsocket",
-        # slangc-emitted .cpp lives in core/share/godot_scn/ (set by
+        # slangc-emitted .cpp lives in flow/core/share/godot_scn/ (set by
         # GenerateGodotScnWriters). If absent, fall back to that path
         # anyway — harmless when no .cpp is on the source list.
-        env.get('idtx_godot_scn_include', 'core/share/godot_scn'),
+        env.get('idtx_godot_scn_include', 'flow/core/share/godot_scn'),
         # slang-cpp-prelude.h lives next to the slangc binary; the
         # godot_scn writer .cpp includes it via <angle brackets>.
         env.get('idtx_godot_scn_prelude_dir', ''),
@@ -205,31 +205,31 @@ def _common_env(env, *, building_dll, static):
 def _sources():
     """The single canonical source list. Both artifacts compile these."""
     return [
-        "core/src/idtx_core.cpp",
-        "core/src/idtx_skeleton.cpp",
-        "core/src/idtx_mesh.cpp",
-        "core/src/idtx_mesh_quads.cpp",
-        "core/src/idtx_material.cpp",
-        "core/src/idtx_avatar.cpp",
-        "core/src/idtx_physics_collider.cpp",
-        "core/src/idtx_springbone.cpp",
-        "core/src/string_utils.cpp",
-        "core/src/usd_helpers.cpp",
-        "core/src/json_writer.cpp",
-        "core/src/idtx_export_usd.cpp",
-        "core/src/idtx_import_usd.cpp",
-        "core/src/idtx_vrm.cpp",
-        "core/src/idtx_vrm_import.cpp",
-        "core/src/idtx_vrm_springbone_parse.cpp",
-        "core/src/vrm_humanoid_bones.cpp",
-        "core/src/idtx_chunker.cpp",
-        "core/src/idtx_export_scn.cpp",
-        "core/src/idtx_transport.cpp",
-        "core/src/idtx_aes.cpp",
+        "flow/core/src/idtx_core.cpp",
+        "flow/core/src/idtx_skeleton.cpp",
+        "flow/core/src/idtx_mesh.cpp",
+        "flow/core/src/idtx_mesh_quads.cpp",
+        "flow/core/src/idtx_material.cpp",
+        "flow/core/src/idtx_avatar.cpp",
+        "flow/core/src/idtx_physics_collider.cpp",
+        "flow/core/src/idtx_springbone.cpp",
+        "flow/core/src/string_utils.cpp",
+        "flow/core/src/usd_helpers.cpp",
+        "flow/core/src/json_writer.cpp",
+        "flow/core/src/idtx_export_usd.cpp",
+        "flow/core/src/idtx_import_usd.cpp",
+        "flow/core/src/idtx_vrm.cpp",
+        "flow/core/src/idtx_vrm_import.cpp",
+        "flow/core/src/idtx_vrm_springbone_parse.cpp",
+        "flow/core/src/vrm_humanoid_bones.cpp",
+        "flow/core/src/idtx_chunker.cpp",
+        "flow/core/src/idtx_export_scn.cpp",
+        "flow/core/src/idtx_transport.cpp",
+        "flow/core/src/idtx_aes.cpp",
         # idtx_scene: USD stage -> engine-neutral node tree (FlatTree converter).
-        "core/src/idtx_scene.cpp",
+        "flow/core/src/idtx_scene.cpp",
         # in-core ArResolver for res://, user:// via the host asset-IO callback.
-        "core/src/idtx_host_uri_resolver.cpp",
+        "flow/core/src/idtx_host_uri_resolver.cpp",
     ]
 
 
@@ -256,7 +256,7 @@ def _build_idtx_core(env, shared=True, static=True):
     # slang runtime buffers and bridges idtx_avatar → bake_scn_kernel.
     if env.get('idtx_godot_scn_available'):
         sources.append(env['idtx_godot_scn_cpp'])
-        sources.append("core/src/idtx_godot_scn_glue.cpp")
+        sources.append("flow/core/src/idtx_godot_scn_glue.cpp")
 
     targets = []
 
@@ -289,7 +289,7 @@ def _build_idtx_core(env, shared=True, static=True):
         # doesn't exist under Unity's .NET Framework API level). Keeps the adapter
         # from ever binding a stale/missing binary. Skip for Emscripten/WASM.
         if platform_name != "web":
-            unity_plugin_dir = os.path.join("unity", "IdtxCore", "Plugins", build_arch)
+            unity_plugin_dir = os.path.join("flow", "adapters", "unity", "IdtxCore", "Plugins", build_arch)
             # idtx_core under its plain logical name so [DllImport("idtx_core")]
             # resolves it.
             unity_targets = [env.InstallAs(
@@ -302,14 +302,14 @@ def _build_idtx_core(env, shared=True, static=True):
             if platform_name == "windows":
                 companions = [f"{usd_root}/lib/usd_ms.dll",
                               f"{usd_root}/bin/tbb12.dll",
-                              f"usd/libs/{platform_name}/libidtx_usd.dll"]
+                              f"flow/core/usd/libs/{platform_name}/libidtx_usd.dll"]
             elif platform_name == "macos":
                 companions = [f"{usd_root}/lib/libusd_ms.dylib",
-                              f"usd/libs/{platform_name}/libidtx_usd.dylib"]
+                              f"flow/core/usd/libs/{platform_name}/libidtx_usd.dylib"]
             elif platform_name == "linux":
                 companions = [f"{usd_root}/lib/libusd_ms.so",
                               f"{usd_root}/lib/libtbb12.so",
-                              f"usd/libs/{platform_name}/libidtx_usd.so"]
+                              f"flow/core/usd/libs/{platform_name}/libidtx_usd.so"]
             else:
                 companions = []
             for c in companions:
@@ -336,7 +336,7 @@ def _build_idtx_core(env, shared=True, static=True):
                     # (VSekaiMaterialAPI / VSekaiMToonAPI / spring bones) silently
                     # degrade to opaque attributes — the same gap idtx_core_init
                     # closes for the other hosts.
-                    shutil.copytree("usd/plugin/idtx_resolver",
+                    shutil.copytree("flow/core/usd/plugin/idtx_resolver",
                                     os.path.join(_dst, "idtx_resolver"), dirs_exist_ok=True)
                     shutil.copytree("openusd-fabric/schema",
                                     os.path.join(_dst, "vSekaiUsd", "resources"), dirs_exist_ok=True)

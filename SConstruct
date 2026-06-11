@@ -45,6 +45,12 @@ if arch in ("aarch64", "arm64"):
 env['arch'] = ARGUMENTS.get('arch', arch )
 # default build target should be debug
 env['target'] = ARGUMENTS.get('target', 'template_debug')
+# float precision of the Godot build we target: 'single' (official builds)
+# or 'double' (e.g. the V-Sekai engine fork). godot-cpp reads the same
+# `precision=` argument itself; we keep it on the env so gdextension.py can
+# name the output DLL per the idtxflow.gdextension manifest
+# (libidtxflow.<plat>.<target>.<arch>[.double].<ext>).
+env['precision'] = ARGUMENTS.get('precision', 'single')
 
 if platform.system() == "Windows" and (env["CXX"] == "cl" or env["CC"] == "cl"):
     # MSVC: Enable C++20
@@ -87,7 +93,7 @@ env.GenerateGodotScnWriters()
 # (Godot) and the future Unity P/Invoke assembly link against this.
 env.BuildIdtxCore(static=ARGUMENTS.get('idtx_static', '1') != '0')
 # Emit the dlopen dispatch table for the core C ABI from
-# core/idtx_core.sigs (POSIX stubs / Windows .def), and gate .sigs<->
+# flow/ports/idtx_core.sigs (POSIX stubs / Windows .def), and gate .sigs<->
 # header ABI drift. Runs after BuildIdtxCore so the Windows .def can be
 # named for the freshly-resolved libidtx_core artifact. Hosts that load
 # core at runtime (instead of linking it) compile the emitted table; the

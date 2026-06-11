@@ -29,7 +29,8 @@ def _build_idtxcli(env):
     cli_env = env.Clone()
 
     cli_env.Append(CPPPATH=[
-        "core/include",
+        # The CLI is a host adapter: it sees only the public C ABI port.
+        "flow/ports/include",
     ])
     cli_env.Append(LIBPATH=[
         "build/idtx_core",
@@ -50,7 +51,7 @@ def _build_idtxcli(env):
         cli_env.Append(CCFLAGS=["-fPIC"])
         cli_env.Append(CCFLAGS=["-O3" if build_target == "template_release" else "-g"])
 
-    sources = ["tools/idtxcli/idtxcli.cpp"]
+    sources = ["flow/adapters/cli/idtxcli.cpp"]
 
     exe_name = "idtxcli"
     build_dir = "build/idtxcli"

@@ -139,7 +139,7 @@ $env:PXR_PLUGINPATH_NAME = "<repo>\thirdparty\openusd-25.11\lib\usd;" +
 .\build\idtxcli\idtxcli.exe version
 ```
 
-The smoke harness (`tools/idtxcli/smoke_test.ps1`) does this for
+The smoke harness (`flow/adapters/cli/smoke_test.ps1`) does this for
 every fixture in `openusd-fabric/tests/fixtures/`. PowerShell only
 — bash POSIX paths (`/c/Users/...`) break Windows USD CLI tools.
 
@@ -152,7 +152,7 @@ don't need to set anything in Godot's project settings.
 ## Unity (VRM consumption only, no VRChat)
 
 Scope cut on 2026-05-23: Unity work targets VRM 1.0 consumption,
-not VRChat / PhysBone authoring. The `unity/IdtxCore/` UPM package
+not VRChat / PhysBone authoring. The `flow/adapters/unity/IdtxCore/` UPM package
 gives a Unity 2022.3.x project a `[InitializeOnLoad]` hook
 (`Editor/IdtxCoreLoader.cs`) that prepends the schema dir to
 `PXR_PLUGINPATH_NAME` before any USD API call.
@@ -182,7 +182,7 @@ Every PR must pass:
    pinning every emitted artifact; non-zero exit on drift.
 3. **`maps/*.json` bytes match emitted output** —
    `openusd-fabric/tests/lean/test_lake_builds.py`.
-4. **idtxcli smoke test** (`tools/idtxcli/smoke_test.ps1`) —
+4. **idtxcli smoke test** (`flow/adapters/cli/smoke_test.ps1`) —
    USD ↔ VRM round-trip on every fixture; `usdchecker --arkit=false`
    gate; `usdcat --flatten` diff line counts reported as
    informational.

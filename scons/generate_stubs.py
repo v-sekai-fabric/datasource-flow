@@ -1,7 +1,7 @@
 """
 SCons tool: generate_stubs
 
-Turns core/idtx_core.sigs into a dlopen-backed dispatch table for the
+Turns flow/ports/idtx_core.sigs into a dlopen-backed dispatch table for the
 libidtx_core C ABI, using the vendored Chromium generator at
 thirdparty/generate_stubs/generate_stubs.py.
 
@@ -22,13 +22,13 @@ Two outputs depending on platform (mirrors the native_media backend):
         mechanism (LoadLibrary on first call).
 
 This tool ALSO gates ABI drift: it parses the export list out of
-core/include/idtx_core/idtx_core.h and the declaration list out of the
+flow/ports/include/idtx_core/idtx_core.h and the declaration list out of the
 .sigs and fails the build if they disagree. The .sigs is the single
 source of truth for the dlopen surface; this keeps it honest against the
 header without anyone remembering to.
 
 Usage in SConstruct (any time after the env is configured; the generated
-table is a build artifact under core/generated/, git-ignored):
+table is a build artifact under flow/ports/generated/, git-ignored):
     env.GenerateCoreStubs()
 """
 import glob
@@ -92,21 +92,21 @@ def _check_drift(header_paths, sigs_path):
             msg.append("  exported in header but MISSING from .sigs: " + ", ".join(missing))
         if extra:
             msg.append("  in .sigs but NOT exported by header: " + ", ".join(extra))
-        msg.append("  → update core/idtx_core.sigs to match the ABI.")
+        msg.append("  → update flow/ports/idtx_core.sigs to match the ABI.")
         raise RuntimeError("\n".join(msg))
 
 
 # --- stub emission -----------------------------------------------------
 
 def _generate_core_stubs(env):
-    print("Generating libidtx_core dlopen stubs from core/idtx_core.sigs...")
+    print("Generating libidtx_core dlopen stubs from flow/ports/idtx_core.sigs...")
 
-    sigs = "core/idtx_core.sigs"
+    sigs = "flow/ports/idtx_core.sigs"
     # The .sigs is the single source of truth for the dlopen surface; gate it
     # against every public header (idtx_core.h + the CDN/crypto siblings), not
     # just idtx_core.h. internal/ is intentionally excluded (non-public).
-    headers = sorted(glob.glob("core/include/idtx_core/*.h"))
-    gen_dir = "core/generated"
+    headers = sorted(glob.glob("flow/ports/include/idtx_core/*.h"))
+    gen_dir = "flow/ports/generated"
     generator = "thirdparty/generate_stubs/generate_stubs.py"
 
     if not os.path.isfile(sigs):
@@ -150,7 +150,7 @@ def _generate_core_stubs(env):
             "-p", "core",
             "-l", "(::std::cerr)",
             "-n", "iostream",
-            "--macro-include", "core/stubgen_compat.h",
+            "--macro-include", "flow/ports/stubgen_compat.h",
             sigs,
         ]
         outputs = [

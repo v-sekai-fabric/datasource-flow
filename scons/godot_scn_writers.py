@@ -8,10 +8,10 @@ defines a `bake_scn_kernel` compute entry that calls every writer
 helper, so slangc keeps the whole library alive through dead-code
 elimination. The lowered targets are committed at:
 
-  core/share/godot_scn/godot_scn.cpp   (host-callable C++, 779 lines)
-  core/share/godot_scn/godot_scn.metal (Metal kernel, 739 lines)
-  core/share/godot_scn/godot_scn.spv   (SPIR-V binary, ~8 KB)
-  core/share/godot_scn/godot_scn.spv.txt  (SPIR-V assembly, audit form)
+  flow/core/share/godot_scn/godot_scn.cpp   (host-callable C++, 779 lines)
+  flow/core/share/godot_scn/godot_scn.metal (Metal kernel, 739 lines)
+  flow/core/share/godot_scn/godot_scn.spv   (SPIR-V binary, ~8 KB)
+  flow/core/share/godot_scn/godot_scn.spv.txt  (SPIR-V assembly, audit form)
 
 Why three targets and not just CPU:
   CPU   — works HEADLESS. No GPU required. Every CI runner regardless
@@ -32,7 +32,7 @@ outputs are in git. A future CI job (TODO) re-runs the pipeline and
 diffs against what's committed to catch drift.
 
 SCons wiring:
-- Adds core/share/godot_scn/godot_scn.cpp to the libidtx_core source
+- Adds flow/core/share/godot_scn/godot_scn.cpp to the libidtx_core source
   list so it compiles into both the shared lib and the static archive.
 - Defines IDTX_GODOT_SCN_AVAILABLE so idtx_export_scn.cpp delegates
   to the slangc-emitted bake_scn_kernel.
@@ -78,8 +78,8 @@ def _slang_include_dir():
 def _generate_godot_scn_writers(env):
     print("Checking godot_scn writers (committed slangc outputs)...")
 
-    out_cpp = "core/share/godot_scn/godot_scn.cpp"
-    out_h   = "core/share/godot_scn"  # contains godot_scn.metal/.spv/.cpp
+    out_cpp = "flow/core/share/godot_scn/godot_scn.cpp"
+    out_h   = "flow/core/share/godot_scn"  # contains godot_scn.metal/.spv/.cpp
 
     if not os.path.isfile(out_cpp):
         print(f"  [godot_scn] {out_cpp} not in git; .scn export returns 99")

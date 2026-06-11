@@ -6,6 +6,19 @@
 
 Immersive Digital Twin Experience Flow plugin for Godot. The plugin enables the import of Universal Scene Description (USD) files into Godot.
 
+## Project Structure
+
+The repository is organized into top-level hexagonal component clusters, following the
+[V-Sekai core/ports/adapters decision](https://v-sekai-multiplayer-fabric.github.io/manuals/decisions/20260610-hexagonal-core-ports-adapters.html):
+
+| Folder | Cluster / role |
+|---|---|
+| `flow/` | The runtime avatar-pipeline component: `flow/core` (OpenUSD-encapsulated domain logic → `libidtx_core`), `flow/ports` (flat C ABI surface every host binds), `flow/adapters` (Godot GDExtension, Unity UPM package, standalone CLI). See `flow/README.md`. |
+| `openusd-fabric/` | Build-time spec/codegen cluster: Lean 4 specs that emit the schema, maps, and shader/writer artifacts the runtime component commits and drift-checks. |
+| `addons/`, `project.godot`, `tests/` | The repo root is itself a Godot project hosting the built plugin (`addons/IDTXFlow`) and the MCP addon with its headless tests. |
+| `scons/`, `SConstruct` | Build orchestration for all of the above. |
+| `templates/` | Template for third-party extensions built on the IDTXFlow SDK. |
+
 ## Using the Plugin
 
 To use the plugin within a Godot 4.5+ project, the required binaries can be downloaded from the release page of this repository. The extracted `IDTXFlow` folder

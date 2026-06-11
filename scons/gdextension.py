@@ -46,12 +46,20 @@ def _build_extension(env):
     usd_root = f"thirdparty/openusd-{openusd_version}"
     mdl_sdk_path = "./thirdparty/mdl_sdk"
     ixws_path = "thirdparty/ixwebsocket"
-    shared_include_path = "./shared/include"
-    usd_extension_path = "usd"
+    # Hexagonal layout (flow/ cluster): this builder is the Godot host
+    # adapter — its sources live under flow/adapters/godot, the core's
+    # OpenUSD-dependent converter framework headers (<idtxflow/...>) under
+    # flow/core/include, and the C ABI port headers under flow/ports.
+    adapter_root = "flow/adapters/godot"
+    core_include_path = "flow/core/include"
+    usd_extension_path = "flow/core/usd"
 
     platform_name = env["platform_name"]
     build_target = env["target"]
     build_arch = env["arch"]
+    # double-precision Godot builds need a matching godot-cpp and a
+    # distinctly-named DLL (see idtxflow.gdextension's *.double.* entries).
+    is_double = env.get("precision", "single") == "double"
 
     ixws_build_dir = f"{ixws_path}/build_{platform_name}_{build_target}"
     
@@ -59,30 +67,30 @@ def _build_extension(env):
 
     # Include paths
     extension_env.Append(CPPPATH=[
-        "source",
-        "source/include",
+        f"{adapter_root}/src",
+        f"{adapter_root}/include",
         f"{usd_root}/include",
         f"{mdl_sdk_path}/include",
         f"{godot_cpp_path}/gdextension",
         f"{godot_cpp_path}/include",
         f"{godot_cpp_path}/gen/include",
-        f"{shared_include_path}",
+        f"{core_include_path}",
         f"{ixws_path}",
         f"{usd_extension_path}/include",
         # libidtx_core — engine-agnostic C ABI. Avatar conversion logic
         # lives here so the Unity P/Invoke assembly can share it.
-        "core/include",
+        "flow/ports/include",
         # CHI-312: generated dlopen table (idtx_core_stubs.{h,cc}) +
         # libidtx_core.<plat>.def — the extension loads core at runtime via
         # this table instead of link-binding it (and its static OpenUSD).
-        "core/generated",
-        # LEMON (cgg-bern/lemon @ cgg) — vendored as a submodule under
-        # libs/lemon for the CHI-253 tris-to-quads max-weight matching
-        # in source/exporter/UsdGodotStageExporter.cpp. libs/lemon-config
-        # ships our hand-written lemon/config.h (the upstream one is
-        # CMake-generated and we don't run CMake on the submodule).
-        "libs/lemon-config",
-        "libs/lemon",
+        "flow/ports/generated",
+        # LEMON (cgg-bern/lemon @ cgg) — vendored under
+        # flow/adapters/godot/libs/lemon for the CHI-253 tris-to-quads
+        # max-weight matching in src/exporter/UsdGodotStageExporter.cpp.
+        # libs/lemon-config ships our hand-written lemon/config.h (the
+        # upstream one is CMake-generated and we don't run CMake on it).
+        f"{adapter_root}/libs/lemon-config",
+        f"{adapter_root}/libs/lemon",
     ])
 
     # Library paths
@@ -139,7 +147,7 @@ def _build_extension(env):
     # CHI-312: libidtx_core is NOT linked here. It is loaded at runtime via the
     # generated dlopen table (Windows: delay-load against an import lib derived
     # from the checked-in .def; POSIX: idtx_core_stubs.cc dlsym thunks). See the
-    # delay-load / stubs wiring below and source/idtx_core_loader.cpp.
+    # delay-load / stubs wiring below and flow/adapters/godot/src/idtx_core_loader.cpp.
     core_lib_basename = f"libidtx_core.{platform_name}.{build_arch}"
     # CHI: the extension links ZERO OpenUSD. All USD work happens inside
     # libidtx_core (loaded at runtime via the dlopen/delay-load table); the
@@ -148,8 +156,10 @@ def _build_extension(env):
     # load-time OpenUSD dependency that made Godot's loader fail (Error 126).
     # (The DLLs are still bundled in addons/IDTXFlow/bin for libidtx_core's own
     # runtime use — see the install step below.)
+    # godot-cpp puts ".double" between target and arch in its suffix.
+    godot_cpp_suffix = f"{build_target}.double" if is_double else build_target
     libs = [
-        f"libgodot-cpp.{platform_name}.{build_target}.{build_arch}",
+        f"libgodot-cpp.{platform_name}.{godot_cpp_suffix}.{build_arch}",
         "ixwebsocket",
     ]
 
@@ -218,16 +228,16 @@ def _build_extension(env):
         extension_env.Append(LINKFLAGS=["-g"])        
 
     # Source files
-    sources = list(set(extension_env.Glob("source/*.cpp") + extension_env.Glob("source/**/*.cpp")))
+    sources = list(set(extension_env.Glob(f"{adapter_root}/src/*.cpp") + extension_env.Glob(f"{adapter_root}/src/**/*.cpp")))
 
     # LEMON non-header symbols required by MaxWeightedMatching:
     #   base.cc defines lemon::INVALID
     #   bits/windows.cc defines lemon::bits::WinLock (Windows-only path)
     # LP solver .cc files (glpk/cbc/clp/cplex/soplex/lp_*) are intentionally
     # excluded — config.h leaves LEMON_HAVE_* undefined, no solver linkage.
-    sources.append(extension_env.File("libs/lemon/lemon/base.cc"))
+    sources.append(extension_env.File(f"{adapter_root}/libs/lemon/lemon/base.cc"))
     if platform_name == "windows":
-        sources.append(extension_env.File("libs/lemon/lemon/bits/windows.cc"))
+        sources.append(extension_env.File(f"{adapter_root}/libs/lemon/lemon/bits/windows.cc"))
 
     # CHI-312: dlopen table wiring.
     #   POSIX — compile the generated dlsym forwarding thunks; idtx_core_loader
@@ -236,7 +246,7 @@ def _build_extension(env):
     #     dependency on core's build output), linked above with /DELAYLOAD.
     delay_import_lib = None
     if platform_name == "windows":
-        core_def = os.path.join("core", "generated", "libidtx_core.windows.def")
+        core_def = os.path.join("flow", "ports", "generated", "libidtx_core.windows.def")
 
         # The import module name MUST carry ".dll". libidtx_core's basename has
         # dots (libidtx_core.windows.x86_64), so an import named without ".dll"
@@ -267,10 +277,10 @@ def _build_extension(env):
              f'lib /nologo /def:"$SOURCE" /out:"$TARGET" /machine:{_machine}'],
         )
     else:
-        sources.append(extension_env.File("core/generated/idtx_core_stubs.cc"))
+        sources.append(extension_env.File("flow/ports/generated/idtx_core_stubs.cc"))
 
     # filter the source files in the gen subfolder
-    exclude_dir = os.path.normpath("source/gen")
+    exclude_dir = os.path.normpath(f"{adapter_root}/src/gen")
     try:
         sources = [s for s in sources if not os.path.commonpath([s.get_dir().get_path(), exclude_dir]) == exclude_dir]
     except ValueError:
@@ -280,14 +290,17 @@ def _build_extension(env):
     if build_target in ["editor", "template_debug"]:
         print("Generating doc data..")
         try:
-            doc_data = extension_env.GodotCPPDocData("source/gen/doc_data.gen.cpp", source=extension_env.Glob("doc_classes/*.xml"))
+            doc_data = extension_env.GodotCPPDocData(f"{adapter_root}/src/gen/doc_data.gen.cpp", source=extension_env.Glob("doc_classes/*.xml"))
             sources.append(doc_data)
         except AttributeError as e:
             print(f"Not including class reference as we're targeting a pre-4.3 baseline. Error: {e}")
 
 
-    # Output library name
+    # Output library name — the .gdextension manifest expects ".double"
+    # AFTER the arch (windows.x86_64.double.debug entries).
     library_name = f"libidtxflow.{platform_name}.{build_target}.{build_arch}"
+    if is_double:
+        library_name += ".double"
     library_extension = "dll" if platform_name == "windows" else ("dylib" if platform_name == "macos" else "so")
     
     # Set build directory
@@ -333,7 +346,7 @@ def _get_libs_to_install(platform_name, openusd_version="", build_arch="x86_64")
     print("Getting libs to install...")
     usd_root = f"./thirdparty/openusd-{openusd_version}"
     mdl_sdk_root = "./thirdparty/mdl_sdk"
-    usd_extension = "usd"
+    usd_extension = "flow/core/usd"
     if platform_name == "windows":
         libs_to_install = [
             f"{usd_root}/lib/usd_ms.dll",
@@ -379,8 +392,8 @@ def _copy_usd_plugins(target, source, env):
     # driven by the host asset-IO callback) — NOT the old extension-side
     # UsdGodotAssetResolver/UsdHttpAssetResolver, which were deleted. Ship its
     # plugInfo so the core's USD dispatches those schemes to it.
-    shutil.copytree("usd/plugin/idtx_resolver", "addons/IDTXFlow/bin/plugin/usd/idtx_resolver", dirs_exist_ok=True)
-    shutil.copytree("usd/plugin/idtx", "addons/IDTXFlow/bin/plugin/usd/idtx", dirs_exist_ok=True)
+    shutil.copytree("flow/core/usd/plugin/idtx_resolver", "addons/IDTXFlow/bin/plugin/usd/idtx_resolver", dirs_exist_ok=True)
+    shutil.copytree("flow/core/usd/plugin/idtx", "addons/IDTXFlow/bin/plugin/usd/idtx", dirs_exist_ok=True)
     # The codeless v_sekai:* schema (VSekaiMaterialAPI / VSekaiMToonAPI / spring
     # bones). idtx_core_init registers the plugin/usd tree, whose top-level
     # plugInfo Includes "*/resources/", so dropping the schema here lets applied

@@ -6,8 +6,8 @@ of Blender's native USD exporter, so a Blender-authored avatar round-trips
 through the exact same core as the Godot / Unity / Unreal hosts.
 
 No engine, no idtxcli — just LoadLibrary + the flat C ABI. The signatures here
-mirror tools/tests/test_usd_export_ex.py (the proven ctypes path) and must stay
-faithful to core/idtx_core.sigs.
+mirror flow/core/spec/test_usd_export_ex.py (the proven ctypes path) and must stay
+faithful to flow/ports/idtx_core.sigs.
 
 Copyright 2026 V-Sekai contributors.
 SPDX-License-Identifier: Apache-2.0 OR MPL-2.0

@@ -28,9 +28,10 @@ def _build_ext_bootstrap_lib(env):
 
     bootstrap_env = env.Clone()
 
-    # Include paths — needs godot-cpp headers (for the macro) and our shared headers
+    # Include paths — needs godot-cpp headers (for the macro) and the
+    # Godot adapter headers (idtxflow_ext/ExtensionBootstrap.h)
     bootstrap_env.Append(CPPPATH=[
-        "shared/include",
+        "flow/adapters/godot/include",
         f"{godot_cpp_path}/gdextension",
         f"{godot_cpp_path}/include",
         f"{godot_cpp_path}/gen/include",
@@ -50,7 +51,7 @@ def _build_ext_bootstrap_lib(env):
         bootstrap_env.Append(CCFLAGS=["-O3" if build_target == "template_release" else "-g"])
 
     # Source
-    sources = ["shared/src/idtxflow_ext/ExtensionBootstrap.cpp"]
+    sources = ["flow/adapters/godot/ext/ExtensionBootstrap.cpp"]
 
     # Output
     library_name = f"libidtxflow_ext_bootstrap.{platform_name}.{build_arch}"
@@ -63,7 +64,7 @@ def _build_ext_bootstrap_lib(env):
     library = bootstrap_env.StaticLibrary(f"{build_dir}/{library_name}.{library_extension}", sources)
 
     # Also install into the SDK libs directory so consumer extensions can find it
-    sdk_lib_dir = "shared/libs"
+    sdk_lib_dir = "flow/adapters/godot/ext/libs"
     if not os.path.exists(sdk_lib_dir):
         os.makedirs(sdk_lib_dir)
     install = bootstrap_env.Install(sdk_lib_dir, library)

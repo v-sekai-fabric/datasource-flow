@@ -14,8 +14,8 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="godot_mcp_tests"
-config/features=PackedStringArray("4.6")
+config/name="IDTX Flow"
+config/features=PackedStringArray("4.7", "Double Precision")
 
 [editor_plugins]
 
