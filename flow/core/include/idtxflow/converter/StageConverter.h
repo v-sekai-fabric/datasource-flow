@@ -15,6 +15,7 @@
 #include <random>
 #include <array>
 #include <string>
+#include <type_traits>
 
 #include <idtx/datasource.h>
 
@@ -968,27 +969,43 @@ namespace converter
         {
             // with the converted prim in place we check if any of the prims attributes has authored a connection
             // and if so, we register it for the computation bridge, assuming the connection is a hint, that this
-            // is a computed attribute
-            std::shared_ptr<exec::ExecBridge> bridge = exec::ExecBridgeManager::Instance()
-                .GetExecBridgeForStage(Stage);
+            // is a computed attribute.
+            //
+            // The exec bridge wraps a pxr::ExecUsdSystem, which is comparatively heavy to spin up — only
+            // create/fetch it lazily once we actually encounter a connected attribute. Stages without any
+            // computed attributes (the common case) therefore never construct an ExecUsdSystem at all.
+            std::shared_ptr<exec::ExecBridge> bridge;
             for (const pxr::UsdAttribute& attribute : usdPrim.GetAttributes())
             {
                 if (attribute.HasAuthoredConnections())
+                {
+                    if (!bridge)
+                        bridge = exec::ExecBridgeManager::Instance().GetExecBridgeForStage(Stage);
                     bridge->RegisterAttributeWithConnection(attribute);
+                }
             }
-            if (bridge->GetValueKeyCount() > 0)
+            // Only engine targets whose converted entity is polymorphic can host an
+            // IExecBridgeHandler (e.g. the Godot nodes). The engine-agnostic FlatTree
+            // target's FlatNode is a plain aggregate with no vtable, so a
+            // dynamic_cast to IExecBridgeHandler is ill-formed there — and there is
+            // nothing to hand compute results to anyway. Guard the registration so
+            // the shared template still instantiates for non-polymorphic targets.
+            if constexpr (std::is_polymorphic_v<typename Types::ConvertedEntity>)
             {
-                bridge->RegisterComputeResultHandler(usdPrim.GetPath(),
-                    std::shared_ptr<IExecBridgeHandler>(
-                        dynamic_cast<IExecBridgeHandler*>(convertedPrim),
-                        [](IExecBridgeHandler*)
-                        {
-                            /* the empty shared_ptr destructor ensures that the owner of the converted
-                             * node instance is responsible for its lifecycle and releasing the
-                             * last instance of the shared_ptr will not delete/free the contained object
-                             */
-                        }
-                    ));
+                if (bridge && bridge->GetValueKeyCount() > 0)
+                {
+                    bridge->RegisterComputeResultHandler(usdPrim.GetPath(),
+                        std::shared_ptr<IExecBridgeHandler>(
+                            dynamic_cast<IExecBridgeHandler*>(convertedPrim),
+                            [](IExecBridgeHandler*)
+                            {
+                                /* the empty shared_ptr destructor ensures that the owner of the converted
+                                 * node instance is responsible for its lifecycle and releasing the
+                                 * last instance of the shared_ptr will not delete/free the contained object
+                                 */
+                            }
+                        ));
+                }
             }
             
             convertedPrim = ConvertPrimPostProcess(usdPrim, convertedPrim, convertedParentPrim);

@@ -410,4 +410,13 @@ template <> inline std::vector<SC::FlatNode*> UsdStageConverter<FT>::ConvertStag
     return entities;
 }
 
+// Datasource prims (idtx #14) are non-visual: they feed the OpenExec compute
+// graph through their authored attributes, which ConvertPrimPostProcessDefault
+// registers from the USD prim independently of the flat tree. The engine-agnostic
+// FlatTree therefore produces no node for them.
+template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertDatasource(
+    const pxr::IDTXDatasource& /*usdDatasource*/) {
+    return nullptr;
+}
+
 }  // namespace idtxflow::converter

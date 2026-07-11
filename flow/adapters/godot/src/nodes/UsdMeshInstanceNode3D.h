@@ -5,24 +5,25 @@
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/animation.hpp>
 
-#include <idtxflow/exec/ExecBridgeHandler.h>
-
 #include <idtxflow_godot/nodes/IUsdNode3D.h>
 
 #include "UsdSkeletonNode3D.h"
 
-class UsdMeshInstanceNode3D : public godot::MeshInstance3D, public IUsdNode3D, public IExecBridgeHandler
+// NOTE: the OpenExec compute bridge (idtx #14) lives entirely in libidtx_core,
+// which is the single OpenUSD consumer. This GDExtension links zero OpenUSD, so
+// it cannot implement IExecBridgeHandler here — the callback payload
+// (ExecComputeResult) is a pxr::VtValue and pulling it in would drag OpenUSD
+// into the extension. Routing computed values back to live Godot nodes would
+// need to be marshalled across the C ABI; until then the node is not a handler.
+class UsdMeshInstanceNode3D : public godot::MeshInstance3D, public IUsdNode3D
 {
     GDCLASS(UsdMeshInstanceNode3D, MeshInstance3D)
     IUSDNODE(UsdMeshInstanceNode3D)
-    
+
 public:
     /******************* Godot lifecycle hooks ***************************/
     void _ready() override;
     void _process(double delta) override;
-    
-    /******************* ExecBridgeHandler ******************************/
-    void OnComputeComplete(const std::vector<ExecComputeResult>& results) override;
 
     /**
      * Set the skeleton this mesh is bound to
