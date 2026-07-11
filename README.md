@@ -2,9 +2,12 @@
 
 # IDTX Flow
 
+Please note the origin of this project is https://github.com/Immersive-Data-Center-Management/idtx-flow. 
+
 ## About this Project
 
 Immersive Digital Twin Experience Flow plugin for Godot. The plugin enables the import of Universal Scene Description (USD) files into Godot.
+
 
 ## Project Structure
 
