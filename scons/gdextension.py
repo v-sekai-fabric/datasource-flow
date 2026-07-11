@@ -65,6 +65,16 @@ def _build_extension(env):
     
     extension_env = env.Clone()
 
+    # Parallel MSVC PDB safety: the extension links with /DEBUG (its own
+    # program database via mspdbsrv) while libidtx_usd compiles with /Zi
+    # (the shared vc140.pdb, also mspdbsrv). Under `-j` both talk to the one
+    # default mspdbsrv endpoint and contend, which surfaces as an
+    # intermittent `LNK1201: error writing to program database`. Giving each
+    # target family its own endpoint spawns a separate mspdbsrv per family:
+    # intra-family /FS sharing stays safe, cross-family contention is gone.
+    if platform_name == "windows":
+        extension_env["ENV"]["_MSPDBSRV_ENDPOINT_"] = f"idtxflow_ext_{build_target}_{build_arch}"
+
     # Include paths
     extension_env.Append(CPPPATH=[
         f"{adapter_root}/src",

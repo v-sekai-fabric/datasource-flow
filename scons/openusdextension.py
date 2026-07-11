@@ -25,7 +25,7 @@ def _generate_usd_extensions_code(env):
     openusd_env["USD_ROOT"] = openusd_root
     openusd_env["PYTHONPATH"] = f"{openusd_root}/lib/python"
     openusd_bin_path = f"{openusd_root}/bin"
-    openusd_env["PATH"] = f"{openusd_root}/bin{os.pathsep}{openusd_root}/lib{os.pathsep}{os.environ.get("PATH", "")}"
+    openusd_env["PATH"] = f"{openusd_root}/bin{os.pathsep}{openusd_root}/lib{os.pathsep}{os.environ.get('PATH', '')}"
 
     genschema_cmd = f"{openusd_bin_path}/usdGenSchema.cmd" if platform.system() == "Windows" else f"{openusd_bin_path}/usdGenSchema"
     result = subprocess.run([
@@ -55,6 +55,12 @@ def _build_usd_extension(env):
     build_target = env["target"]
 
     extension_env = env.Clone()
+    # Parallel MSVC PDB safety: this target's /Zi compiles route through
+    # mspdbsrv for the shared vc140.pdb. Pin it to its own endpoint so it
+    # never contends with the extension link's /DEBUG pdb (which otherwise
+    # surfaces as an intermittent LNK1201 under `-j`). See gdextension.py.
+    if platform_name == "windows":
+        extension_env["ENV"]["_MSPDBSRV_ENDPOINT_"] = f"idtx_usd_{build_target}"
     # Python include path is needed because the OpenUSD withPython build
     # headers transitively include Python.h (via pySafePython.h / wrap_python.hpp)
     python_include = sysconfig.get_path('include')

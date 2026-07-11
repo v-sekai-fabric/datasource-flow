@@ -14,3 +14,8 @@
 *.usd !text !filter !merge !diff
 *.usdc !text !filter !merge !diff
 *.usdz !text !filter !merge !diff
+
+# Keep the pixi manifest and lock LF-normalized (pixi writes LF; avoid a
+# CRLF churn on Windows checkouts).
+pixi.toml text eol=lf
+pixi.lock text eol=lf
