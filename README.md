@@ -2,7 +2,7 @@
 
 # IDTX Flow
 
-Please note the origin of this project is https://github.com/Immersive-Data-Center-Management/idtx-flow. 
+Special thanks to the origin of this project: https://github.com/Immersive-Data-Center-Management/idtx-flow.
 
 ## About this Project
 
