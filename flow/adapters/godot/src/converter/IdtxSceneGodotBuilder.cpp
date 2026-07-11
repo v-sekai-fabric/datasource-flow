@@ -7,7 +7,10 @@
 
 #include "IdtxSceneGodotBuilder.h"
 
+#include <array>
+#include <map>
 #include <string>
+#include <vector>
 
 #include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/box_mesh.hpp>
@@ -242,6 +245,75 @@ Ref<Material> build_material(idtx_scene_t* scene, idtx_node_t* node) {
     return build_material_index(scene, node, idtx_node_get_material_index(node));
 }
 
+// Quantization factor for weld keys: positions/normals are rounded to this many
+// steps per unit so tiny float differences do not split a smoothing vertex.
+static constexpr float WELD_QUANT = 4096.0f;
+
+// Integer key identifying a SMOOTHING vertex by its quantized base position and
+// base normal (the mesh's smoothing groups). Coincident corners that share a
+// position and a normal are one smooth vertex; a hard edge (same position,
+// different authored normal) stays split. Mirrors Blender's glTF importer weld.
+struct WeldKey {
+    int64_t v[6];
+    bool operator<(const WeldKey& other) const {
+        for (int i = 0; i < 6; ++i) {
+            if (v[i] != other.v[i]) {
+                return v[i] < other.v[i];
+            }
+        }
+        return false;
+    }
+};
+
+static WeldKey MakeWeldKey(const Vector3& position, const Vector3& normal) {
+    WeldKey key;
+    key.v[0] = static_cast<int64_t>(Math::round(position.x * WELD_QUANT));
+    key.v[1] = static_cast<int64_t>(Math::round(position.y * WELD_QUANT));
+    key.v[2] = static_cast<int64_t>(Math::round(position.z * WELD_QUANT));
+    key.v[3] = static_cast<int64_t>(Math::round(normal.x * WELD_QUANT));
+    key.v[4] = static_cast<int64_t>(Math::round(normal.y * WELD_QUANT));
+    key.v[5] = static_cast<int64_t>(Math::round(normal.z * WELD_QUANT));
+    return key;
+}
+
+// Per-vertex normals respecting the source's smoothing groups (Blender's
+// normals_split_get). The partition is keyed on the BASE (position, normal) via
+// keyVerts/keyNormals; face normals are measured from facePositions -- pass the
+// base positions for the rest normals, or the morphed positions for a shape's
+// normals. Both use the SAME partition, so a face a shape does not move yields an
+// identical normal in both -> zero delta there -> shapes stay independent. tris
+// hold Godot's reversed winding, so the true outward normal is (C-A) x (B-A).
+static PackedVector3Array ComputeGroupedNormals(
+        const PackedVector3Array& facePositions,
+        const PackedVector3Array& keyVerts,
+        const PackedVector3Array& keyNormals,
+        const PackedInt32Array& tris) {
+    const int64_t vertexCount = facePositions.size();
+    PackedVector3Array normals;
+    normals.resize(vertexCount);
+
+    std::map<WeldKey, Vector3> accumulated;
+    for (int64_t t = 0; t + 2 < tris.size(); t += 3) {
+        const int a = tris[t];
+        const int b = tris[t + 1];
+        const int c = tris[t + 2];
+        const Vector3 faceNormal =
+            (facePositions[c] - facePositions[a]).cross(facePositions[b] - facePositions[a]);
+        accumulated[MakeWeldKey(keyVerts[a], keyNormals[a])] += faceNormal;
+        accumulated[MakeWeldKey(keyVerts[b], keyNormals[b])] += faceNormal;
+        accumulated[MakeWeldKey(keyVerts[c], keyNormals[c])] += faceNormal;
+    }
+    for (int64_t i = 0; i < vertexCount; ++i) {
+        const Vector3 accumulatedNormal = accumulated[MakeWeldKey(keyVerts[i], keyNormals[i])];
+        if (accumulatedNormal.length_squared() < 1e-20f) {
+            normals[i] = Vector3(0.0f, 1.0f, 0.0f); // degenerate: fall back to UP
+        } else {
+            normals[i] = accumulatedNormal.normalized();
+        }
+    }
+    return normals;
+}
+
 // idtx_mesh -> Godot ArrayMesh (single surface; subsets were merged in-core).
 Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     Ref<ArrayMesh> out;
@@ -276,11 +348,13 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
     arrays[Mesh::ARRAY_VERTEX] = verts;
     arrays[Mesh::ARRAY_INDEX] = tris;
 
-    if (idtx_mesh_has_normals(mesh)) {
+    PackedVector3Array baseNormals;  // kept for the blend-shape normal recompute below
+    const bool base_has_normals = idtx_mesh_has_normals(mesh);
+    if (base_has_normals) {
         std::vector<float> n(vc * 3); idtx_mesh_get_normals(mesh, n.data());
-        PackedVector3Array nrm; nrm.resize(vc);
-        for (int32_t i = 0; i < vc; ++i) nrm[i] = Vector3(n[i*3], n[i*3+1], n[i*3+2]);
-        arrays[Mesh::ARRAY_NORMAL] = nrm;
+        baseNormals.resize(vc);
+        for (int32_t i = 0; i < vc; ++i) baseNormals[i] = Vector3(n[i*3], n[i*3+1], n[i*3+2]);
+        arrays[Mesh::ARRAY_NORMAL] = baseNormals;  // may be replaced by base-split normals below
     }
     if (idtx_mesh_has_uvs(mesh)) {
         std::vector<float> u(vc * 2); idtx_mesh_get_uvs(mesh, u.data());
@@ -327,46 +401,64 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
         }
     }
 
-    // Blend shapes (morph targets). Godot stores each target as the ABSOLUTE
-    // morphed geometry (base + delta) in vertex/normal arrays; RELATIVE mode then
-    // adds each weighted delta independently (matches Unity/glTF morph semantics).
-    // Deltas are already in the canonical (== Godot) frame, so no rebasing here.
+    // Blend shapes (morph targets). Godot stores blend-shape normals octahedral-
+    // encoded (unit direction only) and the skeleton compute shader normalizes on
+    // decode, so RELATIVE-mode "morph - base" deltas are invalid (magnitude lost; a
+    // zero delta encodes to garbage). Match Godot's own glTF importer instead: use
+    // NORMALIZED mode and store ABSOLUTE morphed positions and ABSOLUTE unit normals.
+    // The shader then evaluates normalize((1 - sum w)*base + sum w*absolute) -- for
+    // positions this is algebraically the additive-delta result, and every stored
+    // normal stays unit, hence octahedral-lossless.
     TypedArray<Array> blend_arrays;
     float max_bs_delta = 0.0f;  // largest morph offset, to size the custom AABB
     const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
     if (bs_count > 0) {
-        out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_RELATIVE);
-        const bool has_n = idtx_mesh_has_normals(mesh);
+        out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_NORMALIZED);
+        const bool has_n = base_has_normals;
+
+        // If any shape authored no normal offsets we recompute normals from the
+        // deformed geometry within the mesh's smoothing groups. Do it for ALL shapes
+        // then (and the base surface), so base and every shape share one partition
+        // and a face a shape does not move reproduces the base normal (independence).
+        bool recomputeNormals = false;
+        for (int32_t b = 0; b < bs_count; ++b) {
+            if (!idtx_mesh_blendshape_has_normals(mesh, b)) { recomputeNormals = true; break; }
+        }
+        if (has_n && recomputeNormals) {
+            arrays[Mesh::ARRAY_NORMAL] = ComputeGroupedNormals(verts, verts, baseNormals, tris);
+        }
+
         for (int32_t b = 0; b < bs_count; ++b) {
             out->add_blend_shape(StringName(idtx_mesh_get_blendshape_name(mesh, b)));
-            // RELATIVE mode: the blend-shape arrays hold the DELTA (offset from
-            // base), so a weight w contributes base + w*delta. (Storing absolute
-            // base+delta here would add an extra w*base term and explode the mesh.)
+
+            // ABSOLUTE morphed positions: base + delta.
             std::vector<float> dp(vc * 3); idtx_mesh_get_blendshape_position_deltas(mesh, b, dp.data());
             PackedVector3Array bverts; bverts.resize(vc);
             for (int32_t i = 0; i < vc; ++i) {
-                bverts[i] = Vector3(dp[i*3], dp[i*3+1], dp[i*3+2]);
+                bverts[i] = verts[i] + Vector3(dp[i*3], dp[i*3+1], dp[i*3+2]);
                 max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3]));
                 max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3+1]));
                 max_bs_delta = Math::max(max_bs_delta, Math::abs(dp[i*3+2]));
             }
             Array bs_arr; bs_arr.resize(Mesh::ARRAY_MAX);
             bs_arr[Mesh::ARRAY_VERTEX] = bverts;
-            // Godot requires every blend shape to carry the SAME Vertex/Normal/
-            // Tangent arrays as the base surface ("Blend shape format must match
-            // the main array format"). When the base has normals, EVERY shape must
-            // supply a normal array -- even shapes with no authored normal deltas
-            // (a zero-filled delta leaves the base normal unchanged). Emitting it
-            // only for shapes that happen to have normals (as before) made meshes
-            // with any normal-less shape -- e.g. the face's 448 morphs, 2 without
-            // normals -- fail add_surface_from_arrays and vanish entirely.
+
+            // ABSOLUTE unit normals (Godot rejects a surface whose blend shapes do
+            // not carry the same Vertex/Normal arrays as the base, so every shape
+            // must supply a normal array whenever the base has normals).
             if (has_n) {
-                PackedVector3Array bnorm; bnorm.resize(vc);  // zero-initialised
-                if (idtx_mesh_blendshape_has_normals(mesh, b)) {
+                PackedVector3Array bnorm;
+                if (!recomputeNormals) {
+                    // Every shape authored offsets: absolute = normalize(base + delta).
                     std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
+                    bnorm.resize(vc);
                     for (int32_t i = 0; i < vc; ++i) {
-                        bnorm[i] = Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
+                        const Vector3 nn = baseNormals[i] + Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
+                        bnorm[i] = (nn.length_squared() < 1e-20f) ? baseNormals[i] : nn.normalized();
                     }
+                } else {
+                    // Recompute the morphed normals within the base smoothing groups.
+                    bnorm = ComputeGroupedNormals(bverts, verts, baseNormals, tris);
                 }
                 bs_arr[Mesh::ARRAY_NORMAL] = bnorm;
             }
@@ -376,11 +468,9 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
 
     out->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, blend_arrays, Dictionary(), flags);
 
-    // Godot's auto AABB for a RELATIVE-mode morph mesh treats each blend-shape
-    // DELTA array (offsets near the origin) as positions, so the box wrongly
-    // spans from the base geometry to the origin (huge for an off-origin avatar,
-    // breaking editor framing/gizmos). Set the correct AABB ourselves: the base
-    // vertices grown by the largest morph offset.
+    // Set a custom AABB covering the base geometry grown by the largest morph
+    // offset, so editor framing and culling stay correct across the full morph
+    // range instead of relying on Godot's per-mode auto AABB.
     if (verts.size() > 0) {
         AABB box(verts[0], Vector3());
         for (int32_t i = 1; i < verts.size(); ++i) box.expand_to(verts[i]);
