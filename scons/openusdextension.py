@@ -77,9 +77,17 @@ def _build_usd_extension(env):
         f"{openusd_root}/lib"
     ])
 
-    libs = [
-        "usd_ms", "tbb12" if platform_name == "windows" else "tbb.12"
-    ]
+    # oneTBB's library name differs per platform: tbb12.lib (Windows),
+    # libtbb.12.dylib (macOS, linked as -ltbb.12), and libtbb.so.12 (Linux).
+    # Linux can't -l a versioned .so, so link the libtbb.so dev symlink with
+    # plain -ltbb; the recorded DT_NEEDED is still libtbb.so.12 (deployed).
+    if platform_name == "windows":
+        tbb_lib = "tbb12"
+    elif platform_name == "macos":
+        tbb_lib = "tbb.12"
+    else:
+        tbb_lib = "tbb"
+    libs = ["usd_ms", tbb_lib]
 
     # generic build flags
     if platform.system() == "Windows" and (extension_env["CXX"] == "cl" or extension_env["CC"] == "cl"):

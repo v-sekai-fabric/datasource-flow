@@ -663,11 +663,13 @@ class PosixStubWriter(object):
     arguments = [
         re.split(r'[\*& ]', arg)[-1].strip() for arg in signature['params']
     ]
-    # Remove square brackets from arrays, otherwise we will end with a
-    # compilation failure.
+    # Remove the array subscript from array parameters (e.g. "m[16]", "m[]"),
+    # otherwise the forwarding call would index the array instead of passing
+    # the pointer and fail to compile.
     for i in range(0, len(arguments)):
-      if arguments[i].endswith('[]'):
-        arguments[i] = arguments[i][0:-2]
+      bracket = arguments[i].find('[')
+      if bracket != -1:
+        arguments[i] = arguments[i][0:bracket]
 
     arg_list = ', '.join(arguments)
     if arg_list == 'void':

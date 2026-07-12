@@ -1,0 +1,89 @@
+name: Unity Plugin Test
+
+# Headless EditMode test that loads libidtx_core inside the Unity editor and
+# exports .usdc + .usdz, failing if the native library can't load or export
+# returns nonzero. game-ci runs Unity in a Linux container, so it consumes the
+# Linux plugin produced by unity-plugin-build.yaml (call build first, e.g.
+# `needs: build`) and drops it into the package before running the test
+# against ci/UnityExportTest.
+#
+# Requires repository secrets for Unity activation (personal or serial
+# license): UNITY_LICENSE (or UNITY_EMAIL + UNITY_PASSWORD + UNITY_SERIAL).
+# See ci/README.md. When no license is configured the test is skipped so
+# forks without a license still pass.
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    name: Headless Unity export test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+    steps:
+      - name: Check Unity license is configured
+        id: gate
+        run: |
+          if [ -n "${UNITY_LICENSE}" ] || { [ -n "${UNITY_EMAIL}" ] && [ -n "${UNITY_PASSWORD}" ]; }; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No Unity license secret configured — skipping headless export test."
+          fi
+
+      - name: Checkout source
+        if: steps.gate.outputs.enabled == 'true'
+        #v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Download Linux plugin package
+        if: steps.gate.outputs.enabled == 'true'
+        # v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: unity-plugin-Linux
+          path: dist
+
+      - name: Unpack plugin into the package
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          # The build job zips the whole UPM package (IdtxCore/...) — unpack it
+          # over the checked-out source so the Linux .so companions + usd~ are
+          # present for the editor.
+          unzip -o dist/com.vsekai.idtxcore-Linux.zip -d flow/adapters/unity/
+          python ci/verify_unity_plugin.py --platform linux
+        shell: bash
+
+      - name: Cache Unity Library
+        if: steps.gate.outputs.enabled == 'true'
+        #v5.0.4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: ci/UnityExportTest/Library
+          key: Library-UnityExportTest-Linux
+
+      - name: Run EditMode tests
+        if: steps.gate.outputs.enabled == 'true'
+        # Pin to a release commit SHA (matching the repo's other workflows)
+        # before enabling on a protected branch.
+        uses: game-ci/unity-test-runner@v4
+        with:
+          projectPath: ci/UnityExportTest
+          unityVersion: 2022.3.22f1
+          testMode: EditMode
+          artifactsPath: ci/UnityExportTest/artifacts
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload test results
+        if: ${{ always() && steps.gate.outputs.enabled == 'true' }}
+        #v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: unity-test-results
+          path: ci/UnityExportTest/artifacts

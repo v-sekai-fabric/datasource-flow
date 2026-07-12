@@ -3,7 +3,11 @@ name = "fabric-flow-openusd"
 version = "0.1.0"
 description = "Pinned build toolchain for the IDTXFlow extension. Python is locked to 3.14 to match the bundled OpenUSD 26.05 Python bindings (thirdparty/openusd-26.05-withPython/.../pxr/**/*.pyd link python314.dll); usdGenSchema imports pxr, so a mismatched interpreter aborts schema generation with a 'Module use of python314.dll conflicts' error."
 channels = ["conda-forge"]
-platforms = ["win-64"]
+# All three CI runners + local dev. Windows uses MSVC and macOS uses AppleClang
+# (both from the host, and both already ship C++20 <format>); pixi pins the
+# Python-side build toolchain everywhere plus, on Linux, a modern GCC (see the
+# linux-64 target below) so `pixi run <task>` is identical locally and in CI.
+platforms = ["win-64", "osx-arm64", "linux-64"]
 
 [dependencies]
 python = "3.14.*"
@@ -11,6 +15,26 @@ scons = ">=4.6"
 # usdGenSchema templates its C++ output with jinja2.
 jinja2 = "*"
 
+# Linux's system GCC 11 (ubuntu-22.04, kept for glibc 2.35 / Steam Deck) lacks
+# C++20 <format>, which idtxflow's Logger uses. Pin conda's GCC (>=13) so the
+# Linux build has <format>; its sysroot also targets an old glibc, keeping the
+# artifacts broadly compatible. pixi puts the env's bin first on PATH, so scons
+# (g++) and the OpenUSD CMake build both pick up this GCC automatically.
+#
+# conda's GCC links against the env's sysroot, NOT /usr/lib, so idtx_core's
+# third-party deps (idtx_aes/ixwebsocket TLS + zstd/zlib) must come from conda
+# too — otherwise the link fails with "cannot find -lz / -lssl / ...".
+[target.linux-64.dependencies]
+gxx = ">=13"
+zlib = "*"
+openssl = "*"
+zstd = "*"
+
 [tasks]
+# One-step local dev build (Godot extension, debug).
 build = "scons target=template_debug -j8"
 build-release = "scons target=template_release -j8"
+# CI entry points — the workflows call these so local and CI run the exact
+# same commands under the exact same pinned interpreter.
+gdextension = "scons target=template_debug -j8 && scons target=template_release -j8"
+unity = "scons unity_plugin target=template_release -j8"

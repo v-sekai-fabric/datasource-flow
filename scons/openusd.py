@@ -10,9 +10,38 @@ Usage in SConstruct:
     env.BuildOpenUSD(with_python_support=False)  # Set to True to include Python bindings
 """
 import os
+import shutil
 import subprocess
+import sys
+import sysconfig
 
 from SCons.Script import Exit
+
+
+def _build_python_info(platform_name):
+    """Return the (executable, include_dir, library, version) OpenUSD's
+    build_usd.py needs, pointing LIBRARY at the shared libpython that
+    actually exists.
+
+    conda-forge's CPython (pinned via pixi) reports
+    ``sysconfig LDLIBRARY = libpython<ver>.a`` even though it ships only the
+    shared ``libpython<ver>.so``/``.dylib``. build_usd.py's own detection
+    then looks for a static ``.a`` that isn't there and CMake's FindPython3
+    aborts ("Cannot find the library ... libpython3.14.a"). Passing this via
+    ``--build-python-info`` bypasses that detection with the real shared lib.
+    """
+    version = sysconfig.get_config_var("py_version_short")  # e.g. "3.14"
+    include_dir = sysconfig.get_path("include")
+    libdir = sysconfig.get_config_var("LIBDIR") or ""
+    if platform_name == "windows":
+        nodot = sysconfig.get_config_var("py_version_nodot")  # e.g. "314"
+        candidates = [os.path.join(sys.base_prefix, "libs", f"python{nodot}.lib")]
+    elif platform_name == "macos":
+        candidates = [os.path.join(libdir, f"libpython{version}.dylib")]
+    else:
+        candidates = [os.path.join(libdir, f"libpython{version}.so")]
+    library = next((c for c in candidates if os.path.exists(c)), candidates[0])
+    return [sys.executable, include_dir, library, version]
 
 
 def generate(env):
@@ -102,8 +131,19 @@ def _build_open_usd(env, with_python_support=False):
         open_usd_lib = f"{open_usd_build_path}/lib/libusd_ms.dylib"
     else:
         open_usd_lib = f"{open_usd_build_path}/lib/libusd_ms.so"
-    
-    if not os.path.exists(open_usd_lib):
+
+    # An existing lib alone isn't proof the build (or a restored cache) is
+    # complete. The withPython build must also carry usdGenSchema in bin/ —
+    # GenerateUsdExtensionCode() invokes it, and it's only installed when
+    # Jinja2 was found at OpenUSD configure time. A cache saved before Jinja2
+    # was reliably present has the lib but NOT usdGenSchema; treat that as a
+    # miss so we rebuild instead of failing later with FileNotFoundError.
+    build_complete = os.path.exists(open_usd_lib)
+    if build_complete and with_python_support:
+        genschema = "usdGenSchema.cmd" if platform_name == "windows" else "usdGenSchema"
+        build_complete = os.path.exists(f"{open_usd_build_path}/bin/{genschema}")
+
+    if not build_complete:
         print("Building openUSD...")
         openusd_env = {}
         # when building openUSD we need to ensure that proper env-vars are set
@@ -114,6 +154,13 @@ def _build_open_usd(env, with_python_support=False):
             # ensure the current system path is passed to the openUSD python build process
             openusd_env["PATH"] = os.environ.get("PATH", "")
 
+        # Propagate the sccache client + GitHub Actions cache-backend config into
+        # the OpenUSD build subprocess (it otherwise runs with a minimal env, so
+        # the sccache launcher couldn't reach the running server / GHA backend).
+        for _k, _v in os.environ.items():
+            if _k.startswith(("SCCACHE_", "ACTIONS_")) or _k == "USE_SCCACHE":
+                openusd_env[_k] = _v
+
         # Try python3 first, fallback to python if not available
         python_cmd = "python3"
         try:
@@ -122,7 +169,23 @@ def _build_open_usd(env, with_python_support=False):
             python_cmd = "python"
 
         print(f"Building openUSD without python support = {with_python_support}...")
-        result = subprocess.run([
+        # Route OpenUSD's own CMake compiles through sccache when CI (or a
+        # developer) enables it — same USE_SCCACHE switch the SConstruct honors,
+        # backed by the GitHub Actions cache. OpenUSD's built-in cache is ccache
+        # (which the runners don't install), so disable it and set an explicit
+        # sccache compiler launcher instead. Use sccache's absolute path so it
+        # resolves regardless of the reduced env we hand the subprocess.
+        cmake_build_args = "-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_CXX_STANDARD=17"
+        use_sccache = os.environ.get("USE_SCCACHE", "") not in ("", "0", "no", "false")
+        sccache_path = shutil.which("sccache") if use_sccache else None
+        if sccache_path:
+            launcher = sccache_path.replace("\\", "/")
+            cmake_build_args += (
+                f' -DCMAKE_C_COMPILER_LAUNCHER="{launcher}"'
+                f' -DCMAKE_CXX_COMPILER_LAUNCHER="{launcher}"'
+            )
+            print(f"sccache enabled for the openUSD build: {sccache_path}")
+        build_usd_cmd = [
             python_cmd,
             f"{open_usd_path}/build_scripts/build_usd.py",
             f"{open_usd_build_path}",
@@ -132,7 +195,14 @@ def _build_open_usd(env, with_python_support=False):
             "--no-python" if not with_python_support else "--python",
             "--no-examples",
             "--no-tutorials",
-            "--no-tools" if not with_python_support else "--tools",
+            # Never build the C++ command-line tools (usdcat, sdfdump, ...). We
+            # only need usdGenSchema from the withPython build, and it is gated
+            # on PXR_ENABLE_PYTHON_SUPPORT + Jinja2, NOT PXR_BUILD_USD_TOOLS, so
+            # it is still produced. Building the tools additionally fails to
+            # link on Linux: the monolithic libusd_ms.so leaves its Python
+            # symbols for dynamic lookup, which ld cannot resolve when linking a
+            # standalone executable (macOS defers, so it slipped through there).
+            "--no-tools",
             "--no-debug-python",
             "--no-openvdb",
             "--no-usdview",
@@ -140,8 +210,16 @@ def _build_open_usd(env, with_python_support=False):
             "--no-vulkan",
             "--no-materialx",
             "--onetbb",
-            "--cmake-build-args", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_CXX_STANDARD=17",
-        ], env=openusd_env)
+            "--no-compiler-cache" if sccache_path else "--compiler-cache",
+            "--cmake-build-args", cmake_build_args,
+        ]
+        # Point OpenUSD at the shared libpython that actually exists (conda's
+        # sysconfig otherwise reports a static .a that isn't shipped). Only
+        # matters for the Python-enabled build; the non-Python build links no
+        # libpython.
+        if with_python_support:
+            build_usd_cmd += ["--build-python-info", *_build_python_info(platform_name)]
+        result = subprocess.run(build_usd_cmd, env=openusd_env)
         
         if result.returncode != 0:
             print(f"Failed to build openUSD")

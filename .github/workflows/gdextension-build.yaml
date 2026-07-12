@@ -10,7 +10,13 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      # Cache C/C++ compilation with sccache, backed by the GitHub Actions cache.
+      SCCACHE_GHA_ENABLED: "true"
+      USE_SCCACHE: "1"
+
     strategy:
+      fail-fast: false
       matrix:
         os: ["macos-latest", "windows-2022"]
 
@@ -19,14 +25,16 @@ jobs:
         #v6.0.2
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - name: Set up Python
-        #v6.2.0
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+      - name: Set up pixi (pinned Python 3.14 + scons + jinja2)
+        #v0.10.0
+        uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
         with:
-          python-version: '3.x'
+          pixi-version: v0.72.2
+          cache: true
 
-      - name: Install SCons
-        run: pip install scons jinja2 pyside6
+      - name: Set up sccache (GitHub Actions cache backend)
+        #v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
 
       - name: Restore openUSD cache
         #v5.0.4
@@ -34,14 +42,13 @@ jobs:
         with:
           path: |
             thirdparty/openusd-26.05*
-          key: ${{ matrix.os }}-openusd-v26.05
+          key: ${{ matrix.os }}-openusd-v26.05-2
 
       - name: Build GDExtension
         working-directory: .
-        # we always need to build debug & release targets
-        run: |
-          scons target=template_debug
-          scons target=template_release
+        # Same one command as local dev: builds debug & release targets under
+        # the pinned pixi toolchain (see the `gdextension` task in pixi.toml).
+        run: pixi run gdextension
         shell: bash
 
       - name: Save openUSD to cache
@@ -50,14 +57,14 @@ jobs:
         with:
           path: |
             thirdparty/openusd-26.05*
-          key: ${{ matrix.os }}-openusd-v26.05
+          key: ${{ matrix.os }}-openusd-v26.05-2
 
       - name: Prepare artifacts
         working-directory: .
         run: |
           mkdir -p artifacts/gdextension
           mkdir -p artifacts/sdk
-          cp -r addon/IDTXFlow artifacts/gdextension/
+          cp -r addons/IDTXFlow artifacts/gdextension/
           cp -r build/idtxflow-sdk artifacts/sdk/
         shell: bash
 

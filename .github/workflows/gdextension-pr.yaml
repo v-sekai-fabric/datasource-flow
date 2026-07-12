@@ -2,7 +2,7 @@ name: GDExtension PR
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main-fabric]
 
 permissions:
   contents: read

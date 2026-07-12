@@ -101,6 +101,10 @@ def _build_extension(env):
         # upstream one is CMake-generated and we don't run CMake on it).
         f"{adapter_root}/libs/lemon-config",
         f"{adapter_root}/libs/lemon",
+        # Repo root: the POSIX dlopen stubs (flow/ports/generated/
+        # idtx_core_stubs.cc) include "flow/ports/stubgen_compat.h" relative to
+        # it.
+        ".",
     ])
 
     # Library paths
@@ -332,6 +336,26 @@ def _build_extension(env):
     if platform_name == "windows" and build_target in ["editor", "template_debug"]:
         dll_path = library[0].abspath
         pdb_file = os.path.splitext(dll_path)[0] + ".pdb"
+
+    # Windows-only: Windows Defender / mspdbsrv can briefly hold a freshly
+    # linked DLL or its PDB right as SCons copies it into addons/, so an
+    # incremental parallel build intermittently dies with "The process cannot
+    # access the file because it is being used by another process". Retry the
+    # install copy a few times (with a short backoff) so the one-step build is
+    # reliable; the normal, non-contended path is unchanged.
+    if platform_name == "windows":
+        _default_install = extension_env["INSTALL"]
+        def _retrying_install(dest, source, env, _inner=_default_install):
+            import time
+            last_err = None
+            for _attempt in range(12):
+                try:
+                    return _inner(dest, source, env)
+                except (PermissionError, OSError) as err:
+                    last_err = err
+                    time.sleep(0.5)
+            raise last_err
+        extension_env["INSTALL"] = _retrying_install
 
     # Add install target
     install_dir = f"addons/IDTXFlow/bin/{platform_name}"

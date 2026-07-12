@@ -77,12 +77,25 @@ def _downloadMdlSdk(env):
 
     download_file(url, archive_path, "MDL SDK", expected_checksum)
 
+    # NVIDIA does not name the archive's top-level directory consistently
+    # across platforms (macOS keeps the full "MDL-SDK-<ver>-macosx-<arch>"
+    # basename; the Linux tgz extracts to a differently-named dir), so don't
+    # assume the extracted dir equals the archive basename. Snapshot
+    # ./thirdparty, extract, then move whatever new top-level directory
+    # appeared into mdl_sdk.
+    before = set(os.listdir("./thirdparty"))
     extract_archive(archive_path, "./thirdparty")
-
-    # The archive contains mdl-sdk-${VERSION}/... -> rename to mdl_sdk
-    extracted_dir = os.path.join(
-        "./thirdparty", filename.rsplit('.', 1)[0]  # Remove .zip or .tgz
-    )
-    shutil.move(extracted_dir, mdl_root)
+    new_dirs = [
+        e for e in os.listdir("./thirdparty")
+        if e not in before
+        and e != os.path.basename(archive_path)
+        and os.path.isdir(os.path.join("./thirdparty", e))
+    ]
+    if len(new_dirs) != 1:
+        raise RuntimeError(
+            f"MDL SDK extraction of {os.path.basename(archive_path)} produced "
+            f"{new_dirs!r}; expected exactly one new directory under ./thirdparty."
+        )
+    shutil.move(os.path.join("./thirdparty", new_dirs[0]), mdl_root)
 
     print("MDL SDK installed successfully.")
