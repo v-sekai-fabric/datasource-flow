@@ -79,7 +79,7 @@ std::string store_chunk_url(const std::string& base,
 }
 
 idtx_buffer_t* make_buffer_from_string(const std::string& s) {
-    extern struct idtx_buffer; // forward-decl from idtx_chunker.cpp
+    struct idtx_buffer; // forward-decl from idtx_chunker.cpp
     // We can't construct opaque idtx_buffer here without sharing the
     // struct definition; expose a helper in idtx_chunker.cpp instead.
     // For now, construct via a vector and let idtx_chunker.cpp's make_buffer

@@ -34,6 +34,7 @@ table is a build artifact under flow/ports/generated/, git-ignored):
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -166,6 +167,17 @@ def _generate_core_stubs(env):
     if result.returncode != 0:
         raise RuntimeError(
             "generate_stubs.py failed:\n" + result.stdout + result.stderr)
+
+    if platform_name != "windows":
+        # The generated .cc includes the header under its path_from_source
+        # prefix ("core/idtx_core_stubs.h") but the generator emits the header
+        # flat in gen_dir. Mirror it into gen_dir/core/ so the include resolves
+        # against the existing flow/ports/generated include path.
+        core_dir = os.path.join(gen_dir, "core")
+        if not os.path.isdir(core_dir):
+            os.makedirs(core_dir)
+        shutil.copy(os.path.join(gen_dir, "idtx_core_stubs.h"),
+                    os.path.join(core_dir, "idtx_core_stubs.h"))
 
     env['idtx_core_stubs_available'] = True
     env['idtx_core_stubs_dir'] = gen_dir

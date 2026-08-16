@@ -149,9 +149,55 @@ def _common_env(env, *, building_dll, static):
                 else f"thirdparty/ixwebsocket/build_{platform_name}_{build_target}")
     cfg_env.Append(LIBPATH=[ixws_dir] + _thirdparty_libdirs())
 
+    # OpenSSL (libssl/libcrypto) for the ixwebsocket TLS + idtx_aes link.
+    # Windows resolves it from the vcpkg static triplet via _thirdparty_libdirs();
+    # macOS/Linux need the Homebrew (or vcpkg fallback) lib dir on LIBPATH or the
+    # link fails with `ld: library 'ssl' not found`. Mirrors scons/gdextension.py.
+    if platform_name == "macos":
+        _ssl_found = False
+        for _candidate in ("/opt/homebrew/opt/openssl", "/usr/local/opt/openssl",
+                           "/opt/homebrew/opt/openssl@3", "/usr/local/opt/openssl@3"):
+            if os.path.isdir(_candidate):
+                cfg_env.Append(LIBPATH=[os.path.join(_candidate, "lib")])
+                cfg_env.Append(CPPPATH=[os.path.join(_candidate, "include")])
+                _ssl_found = True
+                break
+        if not _ssl_found:
+            _machine = platform.machine().lower()
+            _triplet = "arm64-osx" if _machine in ("arm64", "aarch64") else "x64-osx"
+            _vcpkg = os.path.join("thirdparty", "vcpkg", "installed", _triplet)
+            if os.path.isdir(_vcpkg):
+                cfg_env.Append(LIBPATH=[os.path.join(_vcpkg, "lib")])
+                cfg_env.Append(CPPPATH=[os.path.join(_vcpkg, "include")])
+        # zstd (and other non-keg-only Homebrew libs) live in the Homebrew lib
+        # dir, not under an opt/<formula> prefix; add it so `-lzstd` resolves
+        # (otherwise `ld: library 'zstd' not found`). zlib (-lz) is a macOS
+        # system library, so no extra path is needed for it.
+        for _brew_lib in ("/opt/homebrew/lib", "/usr/local/lib"):
+            if os.path.isdir(_brew_lib):
+                cfg_env.Append(LIBPATH=[_brew_lib])
+    elif platform_name == "linux":
+        if (not os.path.isfile("/usr/include/openssl/ssl.h")
+                and not os.path.isfile("/usr/local/include/openssl/ssl.h")):
+            _machine = platform.machine().lower()
+            _triplet = "arm64-linux" if _machine in ("arm64", "aarch64") else "x64-linux"
+            _vcpkg = os.path.join("thirdparty", "vcpkg", "installed", _triplet)
+            if os.path.isdir(_vcpkg):
+                cfg_env.Append(LIBPATH=[os.path.join(_vcpkg, "lib")])
+                cfg_env.Append(CPPPATH=[os.path.join(_vcpkg, "include")])
+
+    # oneTBB link name is platform-specific: tbb12 (Windows), tbb.12 (macOS,
+    # libtbb.12.dylib), tbb (Linux — link the libtbb.so dev symlink; a versioned
+    # .so cannot be given to -l. DT_NEEDED still resolves to libtbb.so.12).
+    if platform_name == "windows":
+        _tbb_lib = "tbb12"
+    elif platform_name == "macos":
+        _tbb_lib = "tbb.12"
+    else:
+        _tbb_lib = "tbb"
     cfg_env.Append(LIBS=[
         "usd_ms",
-        "tbb12" if platform_name == "windows" else "tbb.12",
+        _tbb_lib,
         "libidtx_usd",
     ])
     # caibx transport + AES dependencies:
@@ -307,14 +353,28 @@ def _build_idtx_core(env, shared=True, static=True):
                 companions = [f"{usd_root}/lib/libusd_ms.dylib",
                               f"flow/core/usd/libs/{platform_name}/libidtx_usd.dylib"]
             elif platform_name == "linux":
+                # oneTBB's Linux soname is libtbb.so.12 (cf. macOS libtbb.12.dylib,
+                # Windows tbb12.dll) — usd_ms.so's DT_NEEDED references exactly that.
                 companions = [f"{usd_root}/lib/libusd_ms.so",
-                              f"{usd_root}/lib/libtbb12.so",
+                              f"{usd_root}/lib/libtbb.so.12",
                               f"flow/core/usd/libs/{platform_name}/libidtx_usd.so"]
             else:
                 companions = []
+            # Deploy every companion UNCONDITIONALLY — a missing one is a hard
+            # build error, not something to skip. The old `if os.path.exists(c)`
+            # guard was evaluated at graph-construction time, BEFORE the build
+            # ran: libidtx_usd is produced later in the same invocation (scons
+            # BuildUsdExtension -> usd/libs/<arch>/libidtx_usd.<ext>), so the
+            # guard saw no file yet and silently dropped it from the Unity
+            # deploy. Unity then loaded idtx_core.dll whose import table needs
+            # libidtx_usd.dll, the OS loader couldn't resolve it, and the first
+            # P/Invoke threw DllNotFoundException("idtx_core") — the USD/USDZ
+            # export failed with no obvious cause. Installing the path string
+            # lets SCons resolve it to its producing node (ordering the build
+            # correctly); for a genuinely absent prebuilt companion SCons halts
+            # with "Source not found", which is exactly what we want.
             for c in companions:
-                if os.path.exists(c):
-                    unity_targets.append(env.Install(unity_plugin_dir, c))
+                unity_targets.append(env.Install(unity_plugin_dir, c))
             # OpenUSD's plugin registry (ar/ sdf/ usd/ ... + plugInfo.json). Without
             # it on PXR_PLUGINPATH_NAME, creating a USD stage in the export aborts
             # the whole editor. Copy it beside usd_ms so IdtxCoreLoader can point
@@ -344,6 +404,12 @@ def _build_idtx_core(env, shared=True, static=True):
             for t in unity_targets:
                 env.Default(t)
                 targets.append(t)
+            # `scons unity_plugin` builds ONLY the Unity native plugin deploy
+            # (idtx_core.<ext> + every runtime companion + the OpenUSD usd~
+            # registry), pulling in just its prerequisites (USD extension +
+            # core DLL) and skipping the Godot/GDExtension build. CI uses this
+            # to build + verify the Unity package without the full engine build.
+            shared_env.Alias("unity_plugin", unity_targets)
 
     static_lib = None
     if static:

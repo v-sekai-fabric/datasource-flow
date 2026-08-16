@@ -1,0 +1,38 @@
+name: Unity Plugin PR
+
+# Validates the Unity native plugin on every PR: build it headlessly (no Unity
+# editor needed — pure scons) on Windows + macOS with the companion-DLL guard,
+# and run the headless EditMode export test when a Unity license is configured.
+
+on:
+  pull_request:
+    # The repo's default branch is `main-fabric`.
+    branches: [main-fabric]
+    paths:
+      - "flow/**"
+      - "openusd-fabric/schema/**"
+      - "scons/**"
+      - "SConstruct"
+      - "ci/**"
+      - ".github/workflows/unity-plugin-*.yaml"
+  # The build job is a REQUIRED status check on the default branch, and the
+  # merge queue evaluates required checks on the merge_group event (not
+  # pull_request). Without this trigger the required check would never report
+  # on the queue ref and PRs would hang in the queue forever. merge_group has
+  # no paths filter, so the build always runs in the queue regardless of which
+  # files a PR touched — which is exactly what a required gate needs.
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/unity-plugin-build.yaml
+
+  test:
+    name: Test
+    needs: build
+    uses: ./.github/workflows/unity-plugin-test.yaml
+    secrets: inherit

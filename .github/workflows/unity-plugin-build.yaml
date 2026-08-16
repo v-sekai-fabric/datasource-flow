@@ -1,0 +1,103 @@
+name: Unity Plugin Build
+
+# Builds the IdtxCore Unity native plugin (idtx_core + the OpenUSD extension +
+# every runtime companion + the usd~ plugin registry) via the `unity_plugin`
+# scons alias, then runs the completeness guard that fails the build if any
+# companion is missing — the regression that silently broke USD/USDZ export.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build Unity plugin on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    env:
+      # Cache C/C++ compilation with sccache, backed by the GitHub Actions cache.
+      SCCACHE_GHA_ENABLED: "true"
+      USE_SCCACHE: "1"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04 (glibc 2.35) for the Linux build: older glibc than the
+        # runner default, so the .so runs on Steam Deck / SteamOS (newer glibc)
+        # by forward compatibility. Steam Deck is x86_64 Linux — the same plugin.
+        # windows-2022 (not windows-latest): SConstruct pins MSVC_VERSION 14.3,
+        # which is the VS 2022 toolset. windows-latest has moved to VS 2026, so
+        # scons finds no 14.3 and never puts cl.exe on PATH ("'cl' is not
+        # recognized"). windows-2022 matches the gdextension build job too.
+        os: ["windows-2022", "macos-latest", "ubuntu-22.04"]
+
+    steps:
+      - name: Checkout source
+        #v6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up pixi (pinned Python 3.14 + scons + jinja2)
+        #v0.10.0
+        uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f
+        with:
+          pixi-version: v0.72.2
+          cache: true
+
+      - name: Set up sccache (GitHub Actions cache backend)
+        #v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
+
+      - name: Restore openUSD cache
+        #v5.0.4
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            thirdparty/openusd-26.05*
+          key: ${{ matrix.os }}-openusd-v26.05-2
+
+      - name: Build Unity plugin (idtx_core + USD extension + companions)
+        working-directory: .
+        # Same one command as local dev (see the `unity` task in pixi.toml).
+        run: pixi run unity
+        shell: bash
+
+      - name: Verify plugin completeness (companion DLLs + USD registry)
+        working-directory: .
+        run: |
+          case "$RUNNER_OS" in
+            Windows) PLAT=windows ;;
+            macOS)   PLAT=macos ;;
+            *)       PLAT=linux ;;
+          esac
+          pixi run python ci/verify_unity_plugin.py --platform "$PLAT"
+        shell: bash
+
+      - name: Save openUSD to cache
+        #v5.0.4
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            thirdparty/openusd-26.05*
+          key: ${{ matrix.os }}-openusd-v26.05-2
+
+      - name: Package Unity plugin (macOS / Linux)
+        if: runner.os == 'macOS' || runner.os == 'Linux'
+        working-directory: .
+        shell: bash
+        run: |
+          cd flow/adapters/unity && zip -r ../../../com.vsekai.idtxcore-${{ runner.os }}.zip IdtxCore
+
+      - name: Package Unity plugin (Windows)
+        if: runner.os == 'Windows'
+        working-directory: .
+        shell: pwsh
+        run: |
+          Compress-Archive -Path flow\adapters\unity\IdtxCore -DestinationPath com.vsekai.idtxcore-${{ runner.os }}.zip
+
+      - name: Upload Unity plugin artifact
+        #v7.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: unity-plugin-${{ runner.os }}
+          path: ./com.vsekai.idtxcore-${{ runner.os }}.zip

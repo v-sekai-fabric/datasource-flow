@@ -1,6 +1,7 @@
 # Build Script for the IDTXFlow GDExtension
 import os
 import platform
+import shutil
 
 from  SCons.Environment import Environment
 from SCons.Script import ARGUMENTS
@@ -69,6 +70,24 @@ env['openusd_version'] = openusd_version
 emit_compiledb = ARGUMENTS.get('compiledb', 'no') not in ('0', 'no', 'false', '')
 if emit_compiledb:
     env.Tool('compilation_db')
+
+# Optional compiler caching via sccache. Enabled when USE_SCCACHE is set and
+# sccache is on PATH (CI wires it to the GitHub Actions cache backend; see
+# .github/workflows). We prepend sccache to the compile COMMAND strings rather
+# than to CC/CXX, so env["CXX"] stays "cl"/"g++" and every `== "cl"` check in the
+# SConstruct and scons/*.py keeps working. Done on the base env before any
+# BuildXxx()/Clone() call so all per-target environments inherit it.
+if os.environ.get('USE_SCCACHE', '') not in ('', '0', 'no', 'false'):
+    sccache = shutil.which('sccache')
+    if sccache:
+        launcher = '"%s" ' % sccache
+        for com in ('CCCOM', 'CXXCOM', 'SHCCCOM', 'SHCXXCOM'):
+            command = env.get(com)
+            if command and 'sccache' not in command:
+                env[com] = launcher + command
+        print('sccache enabled for compilation: %s' % sccache)
+    else:
+        print('USE_SCCACHE set but sccache not found on PATH; building without it')
 
 # download and build IXWebSocket from source as a static library
 env.BuildIXWebSocket()
