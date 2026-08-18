@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "datasource-flow: IDTX Flow as a Godot extension, with USD and VRM import"
+abstract: >
+  A data source implements a repository, and this one reads formats that were not
+  built to be queried by a game engine: USD scenes and VRM avatars, into Godot. It is
+  IDTX Flow with the Godot integration built on top -- a GDExtension over godot-cpp,
+  with the MToon shader and VRM addons beside it. It also supplies idtxcli, which is
+  the single call transport-asset makes to fetch a content-addressed chunk.
+authors:
+  - family-names: Lee
+    given-names: "K. S. Ernest (iFire)"
+    email: ernest.lee@chibifire.com
+    orcid: "https://orcid.org/0000-0003-4570-1436"
+version: 0.1.0-dev.1
+date-released: "2026-08-17"
+license: Apache-2.0
+repository-code: "https://github.com/v-sekai-multiplayer-fabric/datasource-flow"
+keywords:
+  - usd
+  - vrm
+  - gltf
+  - godot
+  - gdextension
+references:
+
+  - type: software
+    title: "IDTX Flow"
+    authors:
+      - name: "Immersive Data Center Management"
+    url: "https://github.com/Immersive-Data-Center-Management/idtx-flow"
+    notes: >
+      The origin this is built from, credited in its own README. The undiverged mirror
+      is kept separately as idtx-flow; this is the copy that carries the Godot work, so
+      the two exist to keep upstream tracking and local divergence apart.
+
+  - type: software
+    title: "godot-cpp: C++ bindings for the Godot script API"
+    authors:
+      - name: "Godot Engine contributors"
+    url: "https://github.com/godotengine/godot-cpp"
+    notes: "Vendored at thirdparty/godot-cpp. What makes this a GDExtension rather than an engine patch."
+
+  - type: software
+    title: "Godot-MToon-Shader"
+    url: "https://github.com/V-Sekai/godot-mtoon-shader"
+    notes: "Vendored under addons/. MToon is what a VRM avatar expects to be shaded with."
+
+  - type: software
+    title: "Godot VRM"
+    url: "https://github.com/V-Sekai/godot-vrm"
+    notes: "Vendored under addons/. VRM import, which is the avatar format this fabric's clients carry."
+
+  - type: software
+    title: "OpenUSD: Universal Scene Description"
+    authors:
+      - name: "Pixar Animation Studios"
+    url: "https://openusd.org/"
+    notes: "The scene format read here, and the same one the fabric's own memory relations are stored in."
