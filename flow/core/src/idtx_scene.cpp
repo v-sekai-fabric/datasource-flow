@@ -477,6 +477,20 @@ IDTX_CORE_API idtx_anim_t* idtx_node_get_animation(const idtx_node_t* n) {
     const S::FAnimation* a = as_node(n)->animation.get();
     return reinterpret_cast<idtx_anim_t*>(const_cast<S::FAnimation*>(a));
 }
+
+IDTX_CORE_API int32_t idtx_node_get_named_animation_count(const idtx_node_t* n) {
+    return n ? static_cast<int32_t>(as_node(n)->named_animations.size()) : 0;
+}
+IDTX_CORE_API idtx_anim_t* idtx_node_get_named_animation(const idtx_node_t* n, int32_t i) {
+    const S::FlatNode* fn = as_node(n);
+    if (!fn || i < 0 || i >= static_cast<int32_t>(fn->named_animations.size())) return nullptr;
+    return reinterpret_cast<idtx_anim_t*>(fn->named_animations[static_cast<size_t>(i)].second.get());
+}
+IDTX_CORE_API const char* idtx_node_get_named_animation_name(const idtx_node_t* n, int32_t i) {
+    const S::FlatNode* fn = as_node(n);
+    if (!fn || i < 0 || i >= static_cast<int32_t>(fn->named_animations.size())) return "";
+    return fn->named_animations[static_cast<size_t>(i)].first.c_str();
+}
 IDTX_CORE_API float idtx_anim_get_length(const idtx_anim_t* a) {
     return a ? as_anim(a)->length : 0.0f;
 }
