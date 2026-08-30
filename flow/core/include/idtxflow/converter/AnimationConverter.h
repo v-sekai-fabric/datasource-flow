@@ -155,6 +155,11 @@ namespace converter
                     // other animated attributes do not create any tracks
                     continue;
                 
+                // This attribute's tracks start where the list currently ends;
+                // accumulating sizes instead indexes past the vector once a
+                // third attribute arrives.
+                trackOffset = animation.Tracks.size();
+
                 // for each bone add an empty track for this track type
                 // the order of key frames in the authored timecodes is stable and matches
                 // the order of joints in this array.
@@ -205,7 +210,6 @@ namespace converter
                     }
                 }
 
-                trackOffset += animation.Tracks.size();
             }
 
             // Blend shape weights from the same animQuery: one TRACK_BLEND_WEIGHT
