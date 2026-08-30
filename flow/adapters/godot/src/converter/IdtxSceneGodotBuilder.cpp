@@ -519,6 +519,96 @@ static void eval_blend_hat(const std::vector<std::pair<int32_t, float>>& entries
     }
 }
 
+
+// One skeleton clip from one idtx animation: joint tracks as-is, grouped blend
+// tracks baked through the in-between basis with crossing-time keys.
+static Ref<Animation> build_skeleton_clip(idtx_anim_t* a, const BlendGroups& bg) {
+
+    Ref<Animation> anim;
+    anim.instantiate();
+    anim->set_length(idtx_anim_get_length(a));
+    const int32_t tc = idtx_anim_get_track_count(a);
+    for (int32_t t = 0; t < tc; ++t) {
+        const idtx_anim_track_type_t tt = idtx_anim_track_get_type(a, t);
+        const int32_t kc = idtx_anim_track_get_key_count(a, t);
+        if (tt == IDTX_ANIM_TRACK_BLEND_WEIGHT) {
+const std::string shape = idtx_anim_track_get_bone_name(a, t);
+auto git = bg.groups.find(shape);
+const bool grouped = git != bg.groups.end() && git->second.size() > 1;
+if (!grouped) {
+    const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
+    anim->track_set_path(ti, NodePath(String(shape.c_str())));
+    for (int32_t k = 0; k < kc; ++k) {
+        anim->blend_shape_track_insert_key(ti, idtx_anim_track_get_key_time(a, t, k),
+                                           idtx_anim_track_get_key_float(a, t, k));
+    }
+    continue;
+}
+std::vector<double> times;
+std::vector<float> ws;
+for (int32_t k = 0; k < kc; ++k) {
+    const double t0 = idtx_anim_track_get_key_time(a, t, k);
+    const float w0 = idtx_anim_track_get_key_float(a, t, k);
+    times.push_back(t0); ws.push_back(w0);
+    if (k + 1 >= kc) continue;
+    const double t1 = idtx_anim_track_get_key_time(a, t, k + 1);
+    const float w1 = idtx_anim_track_get_key_float(a, t, k + 1);
+    if (!(t1 > t0) || w0 == w1) continue;
+    const float lo = std::min(w0, w1), hi = std::max(w0, w1);
+    for (const auto& e : git->second) {
+        if (e.second > lo && e.second < hi) {
+            times.push_back(t0 + (t1 - t0) * double((e.second - w0) / (w1 - w0)));
+            ws.push_back(e.second);
+        }
+    }
+}
+std::vector<size_t> order(times.size());
+for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+std::sort(order.begin(), order.end(),
+          [&](size_t x, size_t y) { return times[x] < times[y]; });
+std::vector<int32_t> member_tracks;
+for (const auto& e : git->second) {
+    const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
+    anim->track_set_path(ti, NodePath(String(bg.names[e.first].c_str())));
+    member_tracks.push_back(ti);
+}
+std::vector<std::pair<int32_t, float>> vals;
+for (size_t oi : order) {
+    eval_blend_hat(git->second, ws[oi], vals);
+    for (size_t m = 0; m < vals.size(); ++m) {
+        anim->blend_shape_track_insert_key(member_tracks[m], times[oi], vals[m].second);
+    }
+}
+continue;
+        }
+        Animation::TrackType gt = Animation::TYPE_POSITION_3D;
+        if (tt == IDTX_ANIM_TRACK_ROTATION) {
+gt = Animation::TYPE_ROTATION_3D;
+        } else if (tt == IDTX_ANIM_TRACK_SCALE) {
+gt = Animation::TYPE_SCALE_3D;
+        }
+        const int32_t ti = anim->add_track(gt);
+        // The path holds the joint name; UsdSkeletonNode3D::_process
+        // resolves it, not the scene tree.
+        anim->track_set_path(ti, NodePath(String(idtx_anim_track_get_bone_name(a, t))));
+        for (int32_t k = 0; k < kc; ++k) {
+const double time = idtx_anim_track_get_key_time(a, t, k);
+if (tt == IDTX_ANIM_TRACK_ROTATION) {
+    float q[4]; idtx_anim_track_get_key_quat(a, t, k, q);
+    anim->rotation_track_insert_key(ti, time, Quaternion(q[0], q[1], q[2], q[3]));
+} else {
+    float v[3]; idtx_anim_track_get_key_vec3(a, t, k, v);
+    if (tt == IDTX_ANIM_TRACK_SCALE) {
+        anim->scale_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
+    } else {
+        anim->position_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
+    }
+}
+        }
+    }
+    return anim;
+}
+
 void apply_blend_shape_weights(MeshInstance3D* mi, idtx_mesh_t* mesh) {
     if (mi == nullptr || mesh == nullptr) return;
     const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
@@ -644,99 +734,29 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
             // Build the skeletal animation clip (per-joint translation/rotation/
             // scale tracks). Playback is driven by UsdSkeletonNode3D::_process,
             // which resolves each track's path through the joint->bone map above.
+            // In-between groups come from the first skinned mesh and apply
+            // to every clip this skeleton carries.
+            BlendGroups node_bg;
+            if (idtx_mesh_t* gm = idtx_node_get_skinned_mesh(node)) {
+                node_bg = collect_blend_groups(gm);
+            }
             if (idtx_anim_t* a = idtx_node_get_animation(node)) {
-                Ref<Animation> anim;
-                anim.instantiate();
-                anim->set_length(idtx_anim_get_length(a));
-                // In-between groups from the first skinned mesh: a grouped
-                // primary's weight track bakes through the basis into one track
-                // per member, with keys inserted where the weight crosses a
-                // member position between authored samples -- baking only at
-                // authored times leaves an in-between no sample lands on flat.
-                BlendGroups bg;
-                if (idtx_mesh_t* gm = idtx_node_get_skinned_mesh(node)) {
-                    bg = collect_blend_groups(gm);
+                sk->set_animation(build_skeleton_clip(a, node_bg));
+            }
+            // Every SkelAnimation under the root is an independent named clip a
+            // consumer scrubs or blends; the bound clip appears here too. A
+            // phenotype authored 0 -> 1 in its own clip composes with another,
+            // where segments of one shared timeline cannot.
+            {
+                Dictionary clips;
+                const int32_t nc = idtx_node_get_named_animation_count(node);
+                for (int32_t ci = 0; ci < nc; ++ci) {
+                    idtx_anim_t* ca = idtx_node_get_named_animation(node, ci);
+                    if (!ca) continue;
+                    clips[String(idtx_node_get_named_animation_name(node, ci))] =
+                        build_skeleton_clip(ca, node_bg);
                 }
-                const int32_t tc = idtx_anim_get_track_count(a);
-                for (int32_t t = 0; t < tc; ++t) {
-                    const idtx_anim_track_type_t tt = idtx_anim_track_get_type(a, t);
-                    const int32_t kc = idtx_anim_track_get_key_count(a, t);
-                    if (tt == IDTX_ANIM_TRACK_BLEND_WEIGHT) {
-                        const std::string shape = idtx_anim_track_get_bone_name(a, t);
-                        auto git = bg.groups.find(shape);
-                        const bool grouped = git != bg.groups.end() && git->second.size() > 1;
-                        if (!grouped) {
-                            const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
-                            anim->track_set_path(ti, NodePath(String(shape.c_str())));
-                            for (int32_t k = 0; k < kc; ++k) {
-                                anim->blend_shape_track_insert_key(ti, idtx_anim_track_get_key_time(a, t, k),
-                                                                   idtx_anim_track_get_key_float(a, t, k));
-                            }
-                            continue;
-                        }
-                        std::vector<double> times;
-                        std::vector<float> ws;
-                        for (int32_t k = 0; k < kc; ++k) {
-                            const double t0 = idtx_anim_track_get_key_time(a, t, k);
-                            const float w0 = idtx_anim_track_get_key_float(a, t, k);
-                            times.push_back(t0); ws.push_back(w0);
-                            if (k + 1 >= kc) continue;
-                            const double t1 = idtx_anim_track_get_key_time(a, t, k + 1);
-                            const float w1 = idtx_anim_track_get_key_float(a, t, k + 1);
-                            if (!(t1 > t0) || w0 == w1) continue;
-                            const float lo = std::min(w0, w1), hi = std::max(w0, w1);
-                            for (const auto& e : git->second) {
-                                if (e.second > lo && e.second < hi) {
-                                    times.push_back(t0 + (t1 - t0) * double((e.second - w0) / (w1 - w0)));
-                                    ws.push_back(e.second);
-                                }
-                            }
-                        }
-                        std::vector<size_t> order(times.size());
-                        for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-                        std::sort(order.begin(), order.end(),
-                                  [&](size_t x, size_t y) { return times[x] < times[y]; });
-                        std::vector<int32_t> member_tracks;
-                        for (const auto& e : git->second) {
-                            const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
-                            anim->track_set_path(ti, NodePath(String(bg.names[e.first].c_str())));
-                            member_tracks.push_back(ti);
-                        }
-                        std::vector<std::pair<int32_t, float>> vals;
-                        for (size_t oi : order) {
-                            eval_blend_hat(git->second, ws[oi], vals);
-                            for (size_t m = 0; m < vals.size(); ++m) {
-                                anim->blend_shape_track_insert_key(member_tracks[m], times[oi], vals[m].second);
-                            }
-                        }
-                        continue;
-                    }
-                    Animation::TrackType gt = Animation::TYPE_POSITION_3D;
-                    if (tt == IDTX_ANIM_TRACK_ROTATION) {
-                        gt = Animation::TYPE_ROTATION_3D;
-                    } else if (tt == IDTX_ANIM_TRACK_SCALE) {
-                        gt = Animation::TYPE_SCALE_3D;
-                    }
-                    const int32_t ti = anim->add_track(gt);
-                    // The path holds the joint name; UsdSkeletonNode3D::_process
-                    // resolves it, not the scene tree.
-                    anim->track_set_path(ti, NodePath(String(idtx_anim_track_get_bone_name(a, t))));
-                    for (int32_t k = 0; k < kc; ++k) {
-                        const double time = idtx_anim_track_get_key_time(a, t, k);
-                        if (tt == IDTX_ANIM_TRACK_ROTATION) {
-                            float q[4]; idtx_anim_track_get_key_quat(a, t, k, q);
-                            anim->rotation_track_insert_key(ti, time, Quaternion(q[0], q[1], q[2], q[3]));
-                        } else {
-                            float v[3]; idtx_anim_track_get_key_vec3(a, t, k, v);
-                            if (tt == IDTX_ANIM_TRACK_SCALE) {
-                                anim->scale_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
-                            } else {
-                                anim->position_track_insert_key(ti, time, Vector3(v[0], v[1], v[2]));
-                            }
-                        }
-                    }
-                }
-                sk->set_animation(anim);
+                if (!clips.is_empty()) sk->set_animations(clips);
             }
             // Attach the skinned mesh as a MeshInstance3D child and bind GPU skin
             // deformation: build_array_mesh emits per-vertex bone/weight arrays, the

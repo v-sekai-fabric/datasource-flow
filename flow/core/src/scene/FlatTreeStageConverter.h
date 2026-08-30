@@ -298,12 +298,17 @@ template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertMesh(
 
 template <> inline SC::FlatNode* UsdStageConverter<FT>::ConvertSkeleton(
     const SC::FTransform& transform, const std::optional<AnimationDescription<FT>>& anim,
+    const std::vector<std::pair<std::string, AnimationDescription<FT>>>& namedClips,
     const SkeletonDescription<FT>& skel) {
     SC::FlatNode* n = OwningEntity->make_node();
     n->kind = IDTX_NODE_SKELETON; n->local_transform = transform;
     n->skeleton = idtx_skeleton_create();
     if (anim && !anim->Tracks.empty()) {
         n->animation = flat_detail::to_flat_animation(*anim);
+    }
+    for (const auto& nc : namedClips) {
+        if (auto fa = flat_detail::to_flat_animation(nc.second))
+            n->named_animations.push_back({nc.first, std::move(fa)});
     }
     for (const Bone<FT>& bone : skel.Bones) {
         idtx_skeleton_add_bone(n->skeleton, bone.Name.c_str(), bone.parentIndex,

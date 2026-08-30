@@ -217,6 +217,12 @@ IDTX_CORE_API int32_t      idtx_node_get_skinned_mesh_material(const idtx_node_t
 // (xyzw), translation/scale keys are vec3.
 IDTX_CORE_API idtx_anim_t* idtx_node_get_animation(const idtx_node_t* node);
 
+// Every SkelAnimation under the root as an independent named clip (the bound
+// source appears here too). Borrowed handles, owned by the scene.
+IDTX_CORE_API int32_t      idtx_node_get_named_animation_count(const idtx_node_t* node);
+IDTX_CORE_API idtx_anim_t* idtx_node_get_named_animation(const idtx_node_t* node, int32_t index);
+IDTX_CORE_API const char*  idtx_node_get_named_animation_name(const idtx_node_t* node, int32_t index);
+
 IDTX_CORE_API float   idtx_anim_get_length(const idtx_anim_t* anim);         // seconds
 IDTX_CORE_API int32_t idtx_anim_get_track_count(const idtx_anim_t* anim);
 

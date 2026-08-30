@@ -150,6 +150,9 @@ struct FlatNode {
 
     // skeletal animation (SKELETON kind); null when the skeleton has no clip.
     std::unique_ptr<FAnimation> animation;
+    // every SkelAnimation prim under the root, as independent named clips a
+    // consumer scrubs or blends (the bound source appears here too, by name).
+    std::vector<std::pair<std::string, std::unique_ptr<FAnimation>>> named_animations;
 
     // collision / collision-root
     idtx_collision_shape_t collision_shape = IDTX_COLLISION_SHAPE_UNKNOWN;
