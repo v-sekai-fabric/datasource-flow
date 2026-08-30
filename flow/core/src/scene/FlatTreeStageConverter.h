@@ -122,6 +122,8 @@ inline void merge_mesh(idtx::core::scene::FMeshData& dst, const idtx::core::scen
             idtx::core::scene::FBlendShape created;
             created.name = sbs.name;
             created.weight = sbs.weight;
+            created.position = sbs.position;
+            created.primary = sbs.primary;
             dst.BlendShapes.push_back(std::move(created));
             dbs = &dst.BlendShapes.back();
         }
@@ -177,6 +179,9 @@ inline std::unique_ptr<SC::FAnimation> to_flat_animation(const AnimationDescript
             case TRACK_SCALE: {
                 track.type = SC::FAnimTrackType::Scale;
             } break;
+            case TRACK_BLEND_WEIGHT: {
+                track.type = SC::FAnimTrackType::BlendWeight;
+            } break;
             default: {
                 continue;  // TRACK_TRANSFORM is not used for skeletons
             }
@@ -188,6 +193,8 @@ inline std::unique_ptr<SC::FAnimation> to_flat_animation(const AnimationDescript
             }
             if (track.type == SC::FAnimTrackType::Rotation) {
                 track.quat_keys.push_back(std::get<SC::FQuat>(key.Value));
+            } else if (track.type == SC::FAnimTrackType::BlendWeight) {
+                track.float_keys.push_back(std::get<float>(key.Value));
             } else {
                 track.vec3_keys.push_back(std::get<SC::FVec3>(key.Value));
             }

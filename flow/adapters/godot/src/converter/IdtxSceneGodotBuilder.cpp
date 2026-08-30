@@ -8,6 +8,7 @@
 #include "IdtxSceneGodotBuilder.h"
 
 #include <array>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -354,7 +355,7 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
         std::vector<float> n(vc * 3); idtx_mesh_get_normals(mesh, n.data());
         baseNormals.resize(vc);
         for (int32_t i = 0; i < vc; ++i) baseNormals[i] = Vector3(n[i*3], n[i*3+1], n[i*3+2]);
-        arrays[Mesh::ARRAY_NORMAL] = baseNormals;  // may be replaced by base-split normals below
+        arrays[Mesh::ARRAY_NORMAL] = baseNormals;  // authored normals pass through unchanged
     }
     if (idtx_mesh_has_uvs(mesh)) {
         std::vector<float> u(vc * 2); idtx_mesh_get_uvs(mesh, u.data());
@@ -416,17 +417,6 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
         out->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_NORMALIZED);
         const bool has_n = base_has_normals;
 
-        // If any shape authored no normal offsets we recompute normals from the
-        // deformed geometry within the mesh's smoothing groups. Do it for ALL shapes
-        // then (and the base surface), so base and every shape share one partition
-        // and a face a shape does not move reproduces the base normal (independence).
-        bool recomputeNormals = false;
-        for (int32_t b = 0; b < bs_count; ++b) {
-            if (!idtx_mesh_blendshape_has_normals(mesh, b)) { recomputeNormals = true; break; }
-        }
-        if (has_n && recomputeNormals) {
-            arrays[Mesh::ARRAY_NORMAL] = ComputeGroupedNormals(verts, verts, baseNormals, tris);
-        }
 
         for (int32_t b = 0; b < bs_count; ++b) {
             out->add_blend_shape(StringName(idtx_mesh_get_blendshape_name(mesh, b)));
@@ -447,18 +437,14 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
             // not carry the same Vertex/Normal arrays as the base, so every shape
             // must supply a normal array whenever the base has normals).
             if (has_n) {
-                PackedVector3Array bnorm;
-                if (!recomputeNormals) {
-                    // Every shape authored offsets: absolute = normalize(base + delta).
-                    std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
-                    bnorm.resize(vc);
-                    for (int32_t i = 0; i < vc; ++i) {
-                        const Vector3 nn = baseNormals[i] + Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
-                        bnorm[i] = (nn.length_squared() < 1e-20f) ? baseNormals[i] : nn.normalized();
-                    }
-                } else {
-                    // Recompute the morphed normals within the base smoothing groups.
-                    bnorm = ComputeGroupedNormals(bverts, verts, baseNormals, tris);
+                // absolute = normalize(base + authored delta). A shape with no
+                // authored offsets has zero deltas and reproduces the base
+                // normal exactly; nothing is recomputed at conversion.
+                std::vector<float> dn(vc * 3); idtx_mesh_get_blendshape_normal_deltas(mesh, b, dn.data());
+                PackedVector3Array bnorm; bnorm.resize(vc);
+                for (int32_t i = 0; i < vc; ++i) {
+                    const Vector3 nn = baseNormals[i] + Vector3(dn[i*3], dn[i*3+1], dn[i*3+2]);
+                    bnorm[i] = (nn.length_squared() < 1e-20f) ? baseNormals[i] : nn.normalized();
                 }
                 bs_arr[Mesh::ARRAY_NORMAL] = bnorm;
             }
@@ -483,11 +469,70 @@ Ref<ArrayMesh> build_array_mesh(idtx_mesh_t* mesh) {
 // Apply each blend shape's current/default weight onto the MeshInstance3D (the
 // mesh must already be set so the shapes exist). Mirrors the configured pose
 // the exporter captured; a RESET to 0 gives the rest pose.
+
+// USD in-betweens, promoted to their own shapes by the core: a primary and its
+// in-betweens form a group sorted by position, and the primary's single weight
+// evaluates through the piecewise-linear basis (base at 0, in-betweens at their
+// positions, primary at 1) into per-member values — USD's interpolation, exactly.
+struct BlendGroups {
+    // primary name -> [(shape index, position)] ascending; size 1 = plain shape.
+    std::map<std::string, std::vector<std::pair<int32_t, float>>> groups;
+    std::vector<std::string> names;
+};
+
+static BlendGroups collect_blend_groups(idtx_mesh_t* mesh) {
+    BlendGroups bg;
+    const int32_t n = idtx_mesh_get_blendshape_count(mesh);
+    for (int32_t b = 0; b < n; ++b) {
+        bg.names.push_back(idtx_mesh_get_blendshape_name(mesh, b));
+        const char* primary = idtx_mesh_get_blendshape_primary(mesh, b);
+        const std::string key = (primary && primary[0]) ? primary : bg.names.back();
+        bg.groups[key].push_back({b, idtx_mesh_get_blendshape_position(mesh, b)});
+    }
+    for (auto& g : bg.groups)
+        std::sort(g.second.begin(), g.second.end(),
+                  [](const auto& x, const auto& y) { return x.second < y.second; });
+    return bg;
+}
+
+static void eval_blend_hat(const std::vector<std::pair<int32_t, float>>& entries,
+                           float w, std::vector<std::pair<int32_t, float>>& out) {
+    out.clear();
+    for (const auto& e : entries) out.push_back({e.first, 0.0f});
+    if (entries.empty() || w <= 0.0f) return;
+    const size_t n = entries.size();
+    if (w >= entries[n - 1].second) {
+        // past the last member its own axis scales linearly (UsdSkel's >1 rule)
+        out[n - 1].second = w / entries[n - 1].second;
+        return;
+    }
+    float prev = 0.0f;
+    for (size_t k = 0; k < n; ++k) {
+        const float pos = entries[k].second;
+        if (w <= pos) {
+            const float t = (pos - prev) > 0.0f ? (w - prev) / (pos - prev) : 1.0f;
+            if (k > 0) out[k - 1].second = 1.0f - t;
+            out[k].second = t;
+            return;
+        }
+        prev = pos;
+    }
+}
+
 void apply_blend_shape_weights(MeshInstance3D* mi, idtx_mesh_t* mesh) {
     if (mi == nullptr || mesh == nullptr) return;
     const int32_t bs_count = idtx_mesh_get_blendshape_count(mesh);
     for (int32_t b = 0; b < bs_count; ++b) {
         mi->set_blend_shape_value(b, idtx_mesh_get_blendshape_weight(mesh, b));
+    }
+    // Spread each grouped primary's authored weight through the basis.
+    BlendGroups bg = collect_blend_groups(mesh);
+    std::vector<std::pair<int32_t, float>> vals;
+    for (const auto& g : bg.groups) {
+        if (g.second.size() < 2) continue;
+        const float w = idtx_mesh_get_blendshape_weight(mesh, g.second.back().first);
+        eval_blend_hat(g.second, w, vals);
+        for (const auto& v : vals) mi->set_blend_shape_value(v.first, v.second);
     }
 }
 
@@ -603,9 +648,69 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                 Ref<Animation> anim;
                 anim.instantiate();
                 anim->set_length(idtx_anim_get_length(a));
+                // In-between groups from the first skinned mesh: a grouped
+                // primary's weight track bakes through the basis into one track
+                // per member, with keys inserted where the weight crosses a
+                // member position between authored samples -- baking only at
+                // authored times leaves an in-between no sample lands on flat.
+                BlendGroups bg;
+                if (idtx_mesh_t* gm = idtx_node_get_skinned_mesh(node)) {
+                    bg = collect_blend_groups(gm);
+                }
                 const int32_t tc = idtx_anim_get_track_count(a);
                 for (int32_t t = 0; t < tc; ++t) {
                     const idtx_anim_track_type_t tt = idtx_anim_track_get_type(a, t);
+                    const int32_t kc = idtx_anim_track_get_key_count(a, t);
+                    if (tt == IDTX_ANIM_TRACK_BLEND_WEIGHT) {
+                        const std::string shape = idtx_anim_track_get_bone_name(a, t);
+                        auto git = bg.groups.find(shape);
+                        const bool grouped = git != bg.groups.end() && git->second.size() > 1;
+                        if (!grouped) {
+                            const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
+                            anim->track_set_path(ti, NodePath(String(shape.c_str())));
+                            for (int32_t k = 0; k < kc; ++k) {
+                                anim->blend_shape_track_insert_key(ti, idtx_anim_track_get_key_time(a, t, k),
+                                                                   idtx_anim_track_get_key_float(a, t, k));
+                            }
+                            continue;
+                        }
+                        std::vector<double> times;
+                        std::vector<float> ws;
+                        for (int32_t k = 0; k < kc; ++k) {
+                            const double t0 = idtx_anim_track_get_key_time(a, t, k);
+                            const float w0 = idtx_anim_track_get_key_float(a, t, k);
+                            times.push_back(t0); ws.push_back(w0);
+                            if (k + 1 >= kc) continue;
+                            const double t1 = idtx_anim_track_get_key_time(a, t, k + 1);
+                            const float w1 = idtx_anim_track_get_key_float(a, t, k + 1);
+                            if (!(t1 > t0) || w0 == w1) continue;
+                            const float lo = std::min(w0, w1), hi = std::max(w0, w1);
+                            for (const auto& e : git->second) {
+                                if (e.second > lo && e.second < hi) {
+                                    times.push_back(t0 + (t1 - t0) * double((e.second - w0) / (w1 - w0)));
+                                    ws.push_back(e.second);
+                                }
+                            }
+                        }
+                        std::vector<size_t> order(times.size());
+                        for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+                        std::sort(order.begin(), order.end(),
+                                  [&](size_t x, size_t y) { return times[x] < times[y]; });
+                        std::vector<int32_t> member_tracks;
+                        for (const auto& e : git->second) {
+                            const int32_t ti = anim->add_track(Animation::TYPE_BLEND_SHAPE);
+                            anim->track_set_path(ti, NodePath(String(bg.names[e.first].c_str())));
+                            member_tracks.push_back(ti);
+                        }
+                        std::vector<std::pair<int32_t, float>> vals;
+                        for (size_t oi : order) {
+                            eval_blend_hat(git->second, ws[oi], vals);
+                            for (size_t m = 0; m < vals.size(); ++m) {
+                                anim->blend_shape_track_insert_key(member_tracks[m], times[oi], vals[m].second);
+                            }
+                        }
+                        continue;
+                    }
                     Animation::TrackType gt = Animation::TYPE_POSITION_3D;
                     if (tt == IDTX_ANIM_TRACK_ROTATION) {
                         gt = Animation::TYPE_ROTATION_3D;
@@ -613,8 +718,9 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                         gt = Animation::TYPE_SCALE_3D;
                     }
                     const int32_t ti = anim->add_track(gt);
+                    // The path holds the joint name; UsdSkeletonNode3D::_process
+                    // resolves it, not the scene tree.
                     anim->track_set_path(ti, NodePath(String(idtx_anim_track_get_bone_name(a, t))));
-                    const int32_t kc = idtx_anim_track_get_key_count(a, t);
                     for (int32_t k = 0; k < kc; ++k) {
                         const double time = idtx_anim_track_get_key_time(a, t, k);
                         if (tt == IDTX_ANIM_TRACK_ROTATION) {

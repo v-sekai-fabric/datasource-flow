@@ -201,6 +201,11 @@ IDTX_CORE_API int32_t idtx_mesh_has_uvs    (const idtx_mesh_t* mesh);
 IDTX_CORE_API int32_t idtx_mesh_has_colors (const idtx_mesh_t* mesh);
 
 // Blend-shape readback. Deltas buffers are vertex_count*3 floats.
+// In-between metadata: an in-between shape sits at `position` (0,1) on its
+// primary's weight axis; a primary carries position 1 and an empty primary name.
+IDTX_CORE_API void        idtx_mesh_set_blendshape_inbetween(idtx_mesh_t* mesh, int32_t index, float position, const char* primary);
+IDTX_CORE_API float       idtx_mesh_get_blendshape_position(const idtx_mesh_t* mesh, int32_t index);
+IDTX_CORE_API const char* idtx_mesh_get_blendshape_primary(const idtx_mesh_t* mesh, int32_t index);
 IDTX_CORE_API int32_t     idtx_mesh_get_blendshape_count(const idtx_mesh_t* mesh);
 IDTX_CORE_API const char* idtx_mesh_get_blendshape_name(const idtx_mesh_t* mesh, int32_t index);
 IDTX_CORE_API float       idtx_mesh_get_blendshape_weight(const idtx_mesh_t* mesh, int32_t index);

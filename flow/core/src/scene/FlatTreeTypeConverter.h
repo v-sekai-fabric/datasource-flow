@@ -48,8 +48,17 @@ UsdTypeConverter<FT>::toVector4(const pxr::GfVec4d& v) { return {float(v[0]), fl
 
 template <> inline S::FQuat
 UsdTypeConverter<FT>::toQuaternion(const pxr::GfQuatd& q) {
+    // Same up-axis change of basis toVector3 and toTransform apply: conjugating
+    // a rotation by B maps its axis through B, so the imaginary part rotates
+    // and the real part stays. Skipping this left animation rotations in the
+    // stage's frame while rest transforms were rebased to Y-up.
     const pxr::GfVec3d i = q.GetImaginary();
-    return {float(i[0]), float(i[1]), float(i[2]), float(q.GetReal())};
+    const float* B = s_up_basis;
+    const float x = float(i[0]), y = float(i[1]), z = float(i[2]);
+    return { B[0]*x + B[1]*y + B[2]*z,
+             B[3]*x + B[4]*y + B[5]*z,
+             B[6]*x + B[7]*y + B[8]*z,
+             float(q.GetReal()) };
 }
 
 template <> inline S::FColor

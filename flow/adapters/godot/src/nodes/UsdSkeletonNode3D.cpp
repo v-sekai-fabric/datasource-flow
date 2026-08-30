@@ -1,5 +1,7 @@
 #include "UsdSkeletonNode3D.h"
 
+#include <godot_cpp/classes/mesh_instance3d.hpp>
+
 using namespace godot;
 
 void UsdSkeletonNode3D::_ready()
@@ -42,9 +44,24 @@ void UsdSkeletonNode3D::_process(double delta)
         // from the track path we can retrieve the bone index we want to animate
         NodePath boneKey = animation_->track_get_path(t_idx);
         int bone_idx = joint_bone_map_.get(boneKey, -1);
-        if (bone_idx < 0) continue;
+        if (bone_idx < 0 && animation_->track_get_type(t_idx) != Animation::TYPE_BLEND_SHAPE) continue;
 
         Animation::TrackType t_type = animation_->track_get_type(t_idx);
+        if (t_type == Animation::TYPE_BLEND_SHAPE)
+        {
+            // The path is the blend shape's name; apply to every child mesh
+            // instance that carries a shape of that name.
+            const float w = animation_->blend_shape_track_interpolate(t_idx, current_anim_time_);
+            const StringName shape(String(boneKey.get_name(boneKey.get_name_count() - 1)));
+            for (int c = 0; c < get_child_count(); ++c)
+            {
+                MeshInstance3D* mi = Object::cast_to<MeshInstance3D>(get_child(c));
+                if (!mi || mi->get_mesh().is_null()) continue;
+                const int bs = mi->find_blend_shape_by_name(shape);
+                if (bs >= 0) mi->set_blend_shape_value(bs, w);
+            }
+            continue;
+        }
         if (t_type == Animation::TYPE_POSITION_3D)
             set_bone_pose_position(bone_idx, animation_->position_track_interpolate(t_idx, current_anim_time_));
         else if (t_type == Animation::TYPE_ROTATION_3D)

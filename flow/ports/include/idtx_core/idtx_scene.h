@@ -109,6 +109,7 @@ typedef enum idtx_anim_track_type {
     IDTX_ANIM_TRACK_TRANSLATION = 0,
     IDTX_ANIM_TRACK_ROTATION,
     IDTX_ANIM_TRACK_SCALE,
+    IDTX_ANIM_TRACK_BLEND_WEIGHT,
 } idtx_anim_track_type_t;
 
 // ---------------------------------------------------------------------
@@ -227,6 +228,8 @@ IDTX_CORE_API double                   idtx_anim_track_get_key_time(const idtx_a
 IDTX_CORE_API void                     idtx_anim_track_get_key_vec3(const idtx_anim_t* anim, int32_t track, int32_t key, float out_xyz[3]);
 // Valid for ROTATION tracks — writes 4 floats (xyzw).
 IDTX_CORE_API void                     idtx_anim_track_get_key_quat(const idtx_anim_t* anim, int32_t track, int32_t key, float out_xyzw[4]);
+// Valid for BLEND_WEIGHT tracks — the shape name is the track's bone_name slot.
+IDTX_CORE_API float                    idtx_anim_track_get_key_float(const idtx_anim_t* anim, int32_t track, int32_t key);
 
 // IDTX_NODE_COLLISION — shape + authored axis/height/radius, plus the
 // interaction-type token list (static/grab/etc.).
