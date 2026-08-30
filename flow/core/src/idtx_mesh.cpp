@@ -12,6 +12,8 @@ struct idtx_blendshape
 {
     std::string        name;
     float              weight = 0.0f;     // current/default weight; typically 0..1, not clamped
+    float              position = 1.0f;   // in-between position on the primary's axis
+    std::string        primary;           // empty on the primary shape
     std::vector<float> position_deltas;  // vertex_count*3
     std::vector<float> normal_deltas;     // vertex_count*3, may be empty
 };
@@ -140,6 +142,26 @@ extern "C" IDTX_CORE_API float idtx_mesh_get_blendshape_weight(const idtx_mesh_t
 {
     if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return 0.0f;
     return mesh->blendshapes[static_cast<size_t>(index)].weight;
+}
+
+extern "C" IDTX_CORE_API void idtx_mesh_set_blendshape_inbetween(idtx_mesh_t* mesh, int32_t index,
+                                                                 float position, const char* primary)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return;
+    mesh->blendshapes[static_cast<size_t>(index)].position = position;
+    mesh->blendshapes[static_cast<size_t>(index)].primary = (primary != nullptr) ? primary : "";
+}
+
+extern "C" IDTX_CORE_API float idtx_mesh_get_blendshape_position(const idtx_mesh_t* mesh, int32_t index)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return 1.0f;
+    return mesh->blendshapes[static_cast<size_t>(index)].position;
+}
+
+extern "C" IDTX_CORE_API const char* idtx_mesh_get_blendshape_primary(const idtx_mesh_t* mesh, int32_t index)
+{
+    if (mesh == nullptr || index < 0 || index >= static_cast<int32_t>(mesh->blendshapes.size())) return "";
+    return mesh->blendshapes[static_cast<size_t>(index)].primary.c_str();
 }
 
 extern "C" IDTX_CORE_API int32_t idtx_mesh_get_blendshape_count(const idtx_mesh_t* mesh)

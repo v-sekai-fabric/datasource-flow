@@ -301,6 +301,57 @@ namespace converter
 		                    }
 		                }
 		                blend_shapes.push_back(std::move(src));
+
+		                // In-betweens: intermediate targets at sub-unit weights on the
+		                // same prim. Each is promoted to its own shape carrying its
+		                // position; the adapter bakes the primary's weight through the
+		                // piecewise-linear basis into per-shape values and keys, which
+		                // reproduces USD's interpolation exactly. In-betweens share the
+		                // primary's point index list.
+		                std::vector<pxr::UsdSkelInbetweenShape> ibs = bs.GetAuthoredInbetweens();
+		                for (size_t ib_i = 0; ib_i < ibs.size(); ++ib_i)
+		                {
+		                    float position = 0.0f;
+		                    if (!ibs[ib_i].GetWeight(&position) || !(position > 0.0f) || !(position < 1.0f))
+		                        continue;
+		                    pxr::VtArray<pxr::GfVec3f> ibOffsets;
+		                    pxr::VtArray<pxr::GfVec3f> ibNormalOffsets;
+		                    if (!ibs[ib_i].GetOffsets(&ibOffsets) || ibOffsets.empty())
+		                        continue;
+		                    ibs[ib_i].GetNormalOffsets(&ibNormalOffsets);
+
+		                    BlendShapeSrc ib_src;
+		                    ib_src.name = bsNames[b].GetString() + "__ib" + std::to_string(ib_i);
+		                    ib_src.primary = bsNames[b].GetString();
+		                    ib_src.position = position;
+		                    ib_src.has_normals = !ibNormalOffsets.empty();
+		                    ib_src.pos.assign(numPoints, pxr::GfVec3f(0.0f));
+		                    if (ib_src.has_normals)
+		                        ib_src.nrm.assign(numPoints, pxr::GfVec3f(0.0f));
+		                    if (pointIndices.empty())
+		                    {
+		                        for (size_t i = 0; i < ibOffsets.size() && i < numPoints; ++i)
+		                            ib_src.pos[i] = ibOffsets[i];
+		                        for (size_t i = 0; ib_src.has_normals && i < ibNormalOffsets.size() && i < numPoints; ++i)
+		                            ib_src.nrm[i] = ibNormalOffsets[i];
+		                    }
+		                    else
+		                    {
+		                        for (size_t k = 0; k < pointIndices.size() && k < ibOffsets.size(); ++k)
+		                        {
+		                            int pi = pointIndices[k];
+		                            if (pi >= 0 && static_cast<size_t>(pi) < numPoints)
+		                                ib_src.pos[pi] = ibOffsets[k];
+		                        }
+		                        for (size_t k = 0; ib_src.has_normals && k < pointIndices.size() && k < ibNormalOffsets.size(); ++k)
+		                        {
+		                            int pi = pointIndices[k];
+		                            if (pi >= 0 && static_cast<size_t>(pi) < numPoints)
+		                                ib_src.nrm[pi] = ibNormalOffsets[k];
+		                        }
+		                    }
+		                    blend_shapes.push_back(std::move(ib_src));
+		                }
 		            }
 		        }
 		    }
@@ -419,20 +470,10 @@ namespace converter
 							// normals are authored for each face only
 							normal = TypeConverter::toVector3(normals[faceIndex]);
 						}
-					} else
-					{
-						// we need to calculate a normal vector for this point if none are provided in the
-						// usdMesh. Omitting normal vectors completely in game engines can lead to rndering
-						// artifacts.
-						// to keep normal calculation simple we calculate the normal of the point, based on the
-						// face it belongs to
-						int vidx1 = facePointIndices[facePointOffset + 0];
-						int vidx2 = facePointIndices[facePointOffset + 1];
-						int vidx3 = facePointIndices[facePointOffset + 2];
-						class pxr::GfVec3d edge1 = points[vidx2] - points[vidx1];
-						class pxr::GfVec3d edge2 = points[vidx3] - points[vidx1];
-						normal = TypeConverter::toVector3(pxr::GfCross(edge1, edge2).GetNormalized());
 					}
+					// A mesh with no authored normals stays a mesh with no
+					// normals: the placeholder written here is discarded after
+					// the loop, so nothing is fabricated at conversion.
 
 					// if the mesh provided texture coordinates (uv mapping) convert them, too
 					if (!texcoords.empty())
@@ -569,6 +610,11 @@ namespace converter
 			// vertices (source_points[v] is v's USD point). Sparse output: only
 			// vertices the shape actually moves. Compiled only for targets whose
 			// MeshData carries a blend-shape list (FlatTree); a no-op otherwise.
+			if (normals.empty())
+			{
+				meshData.Normals = decltype(meshData.Normals)();
+			}
+
 			if constexpr (requires (MeshDataType m) { m.BlendShapes; })
 			{
 				for (const BlendShapeSrc& bs : blend_shapes)
@@ -576,6 +622,8 @@ namespace converter
 					typename std::decay<decltype(meshData.BlendShapes)>::type::value_type fbs;
 					fbs.name = bs.name;
 					fbs.weight = bs.weight;
+					fbs.position = bs.position;
+					fbs.primary = bs.primary;
 					fbs.has_normals = bs.has_normals;
 					for (size_t v = 0; v < source_points.size(); ++v)
 					{
@@ -621,6 +669,8 @@ namespace converter
 		struct BlendShapeSrc {
 			std::string               name;
 			float                     weight = 0.0f;
+			float                     position = 1.0f;   // in-between position; primary = 1
+			std::string               primary;           // empty on the primary shape
 			bool                      has_normals = false;
 			std::vector<pxr::GfVec3f> pos;   // size == points.size()
 			std::vector<pxr::GfVec3f> nrm;   // size == points.size() (if has_normals)

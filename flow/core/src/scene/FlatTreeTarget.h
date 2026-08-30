@@ -63,6 +63,8 @@ struct FTransform {
 struct FBlendShape {
     std::string          name;
     float                weight = 0.0f;   // current/default weight (typically 0..1)
+    float                position = 1.0f; // in-between position on the primary's axis
+    std::string          primary;         // empty on the primary shape
     bool                 has_normals = false;
     std::vector<int32_t> indices;         // output-vertex indices that move
     std::vector<FVec3>   pos_offsets;     // parallel to indices

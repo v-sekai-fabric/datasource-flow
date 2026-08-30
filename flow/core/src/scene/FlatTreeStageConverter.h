@@ -122,6 +122,8 @@ inline void merge_mesh(idtx::core::scene::FMeshData& dst, const idtx::core::scen
             idtx::core::scene::FBlendShape created;
             created.name = sbs.name;
             created.weight = sbs.weight;
+            created.position = sbs.position;
+            created.primary = sbs.primary;
             dst.BlendShapes.push_back(std::move(created));
             dbs = &dst.BlendShapes.back();
         }

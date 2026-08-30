@@ -95,6 +95,8 @@ idtx_mesh_t* finalize_mesh(const S::FMeshData& md) {
         }
         idtx_mesh_add_blendshape(mesh, bs.name.c_str(), bs.weight,
                                  bpos.data(), has_n ? bnrm.data() : nullptr);
+        idtx_mesh_set_blendshape_inbetween(mesh, idtx_mesh_get_blendshape_count(mesh) - 1,
+                                           bs.position, bs.primary.c_str());
     }
 
     // Per-material face subsets (UsdGeomSubset) -> idtx_mesh subsets.
