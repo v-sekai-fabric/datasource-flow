@@ -611,8 +611,12 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                         gt = Animation::TYPE_ROTATION_3D;
                     } else if (tt == IDTX_ANIM_TRACK_SCALE) {
                         gt = Animation::TYPE_SCALE_3D;
+                    } else if (tt == IDTX_ANIM_TRACK_BLEND_WEIGHT) {
+                        gt = Animation::TYPE_BLEND_SHAPE;
                     }
                     const int32_t ti = anim->add_track(gt);
+                    // The path holds the joint name (or, for blend tracks, the shape
+                    // name); UsdSkeletonNode3D::_process resolves it, not the scene tree.
                     anim->track_set_path(ti, NodePath(String(idtx_anim_track_get_bone_name(a, t))));
                     const int32_t kc = idtx_anim_track_get_key_count(a, t);
                     for (int32_t k = 0; k < kc; ++k) {
@@ -620,6 +624,8 @@ Node3D* build_one(idtx_scene_t* scene, idtx_node_t* node) {
                         if (tt == IDTX_ANIM_TRACK_ROTATION) {
                             float q[4]; idtx_anim_track_get_key_quat(a, t, k, q);
                             anim->rotation_track_insert_key(ti, time, Quaternion(q[0], q[1], q[2], q[3]));
+                        } else if (tt == IDTX_ANIM_TRACK_BLEND_WEIGHT) {
+                            anim->blend_shape_track_insert_key(ti, time, idtx_anim_track_get_key_float(a, t, k));
                         } else {
                             float v[3]; idtx_anim_track_get_key_vec3(a, t, k, v);
                             if (tt == IDTX_ANIM_TRACK_SCALE) {

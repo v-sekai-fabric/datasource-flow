@@ -490,8 +490,9 @@ IDTX_CORE_API idtx_anim_track_type_t idtx_anim_track_get_type(const idtx_anim_t*
     if (!tr) return IDTX_ANIM_TRACK_TRANSLATION;
     switch (tr->type) {
         case S::FAnimTrackType::Rotation: return IDTX_ANIM_TRACK_ROTATION;
-        case S::FAnimTrackType::Scale:    return IDTX_ANIM_TRACK_SCALE;
-        default:                          return IDTX_ANIM_TRACK_TRANSLATION;
+        case S::FAnimTrackType::Scale:       return IDTX_ANIM_TRACK_SCALE;
+        case S::FAnimTrackType::BlendWeight: return IDTX_ANIM_TRACK_BLEND_WEIGHT;
+        default:                             return IDTX_ANIM_TRACK_TRANSLATION;
     }
 }
 IDTX_CORE_API int32_t idtx_anim_track_get_key_count(const idtx_anim_t* a, int32_t t) {
@@ -519,6 +520,12 @@ IDTX_CORE_API void idtx_anim_track_get_key_quat(const idtx_anim_t* a, int32_t t,
     }
     out_xyzw[0] = tr->quat_keys[k].x; out_xyzw[1] = tr->quat_keys[k].y;
     out_xyzw[2] = tr->quat_keys[k].z; out_xyzw[3] = tr->quat_keys[k].w;
+}
+
+IDTX_CORE_API float idtx_anim_track_get_key_float(const idtx_anim_t* a, int32_t t, int32_t k) {
+    const S::FAnimTrack* tr = anim_track(a, t);
+    if (!tr || k < 0 || k >= static_cast<int32_t>(tr->float_keys.size())) return 0.0f;
+    return tr->float_keys[k];
 }
 
 IDTX_CORE_API void idtx_node_get_collision(const idtx_node_t* n, idtx_collision_shape_t* shape,

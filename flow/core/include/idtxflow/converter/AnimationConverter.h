@@ -36,7 +36,8 @@ namespace converter
         TRACK_POSITION,
         TRACK_ROTATION,
         TRACK_SCALE,
-        TRACK_TRANSFORM
+        TRACK_TRANSFORM,
+        TRACK_BLEND_WEIGHT  // blend shape weight; Name is the shape's token
     };
 
     template<typename TargetEngine>
@@ -47,7 +48,7 @@ namespace converter
         using Transform = typename idtxflow::types::TargetEngineTypes<TargetEngine>::Transform;
         
         double Time;
-        std::variant<Vector3, Quaternion, Transform> Value;
+        std::variant<Vector3, Quaternion, Transform, float> Value;
     };
 
     template<typename TargetEngine>
@@ -205,6 +206,48 @@ namespace converter
                 }
 
                 trackOffset += animation.Tracks.size();
+            }
+
+            // Blend shape weights from the same animQuery: one TRACK_BLEND_WEIGHT
+            // track per shape, sampled at the weights' own timecodes -- a key that
+            // exists only in blendShapeWeights (a mid-clip peak) would be dropped
+            // by reusing the joint samples. No samples anywhere -> one rest key.
+            std::vector<double> blendTimecodes;
+            animQuery.GetBlendShapeWeightTimeSamples(&blendTimecodes);
+            if (blendTimecodes.empty())
+                blendTimecodes = animTimecodes;
+            if (blendTimecodes.empty())
+                blendTimecodes.push_back(0.0);
+
+            pxr::VtArray<pxr::TfToken> blendOrder = animQuery.GetBlendShapeOrder();
+            if (!blendOrder.empty())
+            {
+                const size_t numBlends = blendOrder.size();
+                const size_t blendTrackStart = animation.Tracks.size();
+                for (const pxr::TfToken& bname : blendOrder)
+                {
+                    AnimationTrackDescription<TargetEngine> bt;
+                    bt.Type = TRACK_BLEND_WEIGHT;
+                    bt.Name = bname.GetString();
+                    animation.Tracks.push_back(std::move(bt));
+                }
+
+                pxr::VtArray<float> blendWeights;
+                for (double tc : blendTimecodes)
+                {
+                    if (!animQuery.ComputeBlendShapeWeights(&blendWeights, pxr::UsdTimeCode(tc)))
+                        continue;
+                    if (blendWeights.size() < numBlends)
+                        continue;
+                    const double ts = tc / usdTimeCodesPerSec;
+                    for (size_t b = 0; b < numBlends; ++b)
+                    {
+                        AnimationTrackKey<TargetEngine> key;
+                        key.Time = ts;
+                        key.Value = blendWeights[b];
+                        animation.Tracks[blendTrackStart + b].Keys.push_back(std::move(key));
+                    }
+                }
             }
 
             return animation;

@@ -95,7 +95,7 @@ struct FMeshData {
 // track per (joint, channel); each channel is keyed by time. Rotation keys live
 // in quat_keys, translation/scale keys in vec3_keys (parallel to `times`). The
 // host (idtx_scene.cpp -> idtx_anim getters) reads these to build its own clip.
-enum class FAnimTrackType { Translation, Rotation, Scale };
+enum class FAnimTrackType { Translation, Rotation, Scale, BlendWeight };
 
 struct FAnimTrack {
     std::string         bone_name;   // USD joint name (matches a skeleton bone)
@@ -103,6 +103,7 @@ struct FAnimTrack {
     std::vector<double> times;
     std::vector<FVec3>  vec3_keys;   // Translation / Scale
     std::vector<FQuat>  quat_keys;   // Rotation
+    std::vector<float>  float_keys;  // BlendWeight (bone_name holds the shape name)
 };
 
 struct FAnimation {
