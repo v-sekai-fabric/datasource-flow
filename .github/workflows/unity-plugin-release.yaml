@@ -13,6 +13,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   check-version:
     if: github.ref == 'refs/heads/main-fabric'
